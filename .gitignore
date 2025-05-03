@@ -1,0 +1,9 @@
+.dev/*
+*.pyc
+*.pyo*
+*.venv
+.coverage
+__pycache__
+dist
+htmlcov
+.mypy_cache

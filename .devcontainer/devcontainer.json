@@ -1,0 +1,15 @@
+{
+	"name": "Sandock DevContainer",
+	"image": "mcr.microsoft.com/devcontainers/python:1-3.9-bullseye",
+	"features": {
+		"ghcr.io/devcontainers-extra/features/poetry:2": {}
+	},
+	"customizations": {
+		"vscode": {
+		    "extensions": [
+			"takumii.markdowntable"
+		    ]
+		}
+	    },
+	"postCreateCommand": "poetry install --with=dev"
+}

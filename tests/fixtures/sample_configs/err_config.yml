@@ -1,0 +1,4 @@
+programs:
+  py311:
+      image: python:3.11.12-slim-bullseye
+    exec: python3

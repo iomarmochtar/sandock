@@ -1,0 +1,18 @@
+{
+  "programs": {
+		"isolated-sh": {
+			"image": "omr:isolated_sh",
+			"build": {
+        "dockerFile": "./Dockerfile_isolated_sh"
+			},
+			"exec": "/bin/bash",
+			"network": "none",
+			"cap_drop": [
+				"all"
+			],
+			"extra_run_args": [
+				"--security-opt=no-new-privileges:true"
+			]
+		}
+  }
+}

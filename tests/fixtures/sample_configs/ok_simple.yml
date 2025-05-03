@@ -1,0 +1,22 @@
+execution:
+  docker_bin: podman
+
+volumes:
+  go_cache: {}
+
+programs:
+  py311:
+    image: python:3.11.12-slim-bullseye
+    exec: python3
+    network: host
+    aliases:
+      sh: /bin/bash
+
+  go122:
+    image: golang:1.22.12-bookworm
+    exec: go
+    env:
+      GOCACHE: /cache/gocache
+      GOMODCACHE: /cache/gomodcache
+    volumes:
+      - "go_cache:/cache"

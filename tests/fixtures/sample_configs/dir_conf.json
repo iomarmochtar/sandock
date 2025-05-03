@@ -1,0 +1,7 @@
+{
+	"programs": {
+    "py311": {
+      "network": "none"
+    }
+  }
+}

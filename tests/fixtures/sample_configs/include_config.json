@@ -1,0 +1,14 @@
+{
+  "volumes": {
+    "python_vol": {}
+  },
+	"programs": {
+    "mycurrent_dir_progs": {
+      "image": "python:3.11.12-slim-bullseye",
+      "exec": "python",
+      "volumes": [
+        "python_vol:/opt/mount:ro"
+      ]
+    }
+  }
+}

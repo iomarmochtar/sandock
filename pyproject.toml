@@ -1,0 +1,50 @@
+[project]
+name = "sandock"
+version = "0.1.0"
+description = "CLI tool for sandbox execution using container approach"
+authors = [{ name = "Imam Omar Mochtar", email = "iomarmochtar@gmail.com" }]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.9"
+
+[project.scripts]
+sandock = "sandock.cli:main"
+
+[project.urls]
+Repository = "https://github.com/iomarmochtar/sandock"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[project.optional-dependencies]
+yml-config = [ "pyyaml (>=6.0.2,<7.0.0)" ]
+
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+black = "^25.1.0"
+mypy = "^1.15.0"
+types-pyyaml = "^6.0.12.20250402"
+coverage = "^7.8.0"
+flake8 = "^7.2.0"
+flake8-pyproject = "^1.2.3"
+pyyaml = "^6.0.2"
+
+[tool.black]
+target-version = ['py39']
+
+[tool.mypy]
+python_version = "3.9"
+mypy_path = "sandock"
+exclude = "tests"
+strict = true
+pretty = true
+show_error_codes = true
+show_column_numbers = true
+
+[tool.flake8]
+max-line-length = 88
+extend-ignore = ["E501"]
+exclude = ["build", "dist", "__pycache__"]

@@ -1,0 +1,215 @@
+config:
+  includes:
+    - ~/me/iomarmochtar/werk/job1.yml
+  current_dir_conf_excludes:
+    - ^.*?/me/rnd/untrusted/.*?$
+    - ^/tmp/test.*?$
+
+execution:
+  alias_program_prefix: sx-
+
+volumes:
+  gcloud_config:
+    labels:
+      category.mochtar.net: "werk"
+  mysh_omarov:
+    labels:
+      backup.mochtar.net: "true"
+  go_cache: {}
+
+images:
+  "omr:mysh_base":
+    dockerfile_inline:
+      FROM ubuntu:22.04
+
+      ARG NU_VER=0.103.0
+
+      RUN apt update && apt install -y vim tmux python3 sudo bind9-utils git apt-transport-https ca-certificates gnupg curl && \
+          curl -s -L https://github.com/nushell/nushell/releases/download/${NU_VER}/nu-${NU_VER}-x86_64-unknown-linux-gnu.tar.gz | tar xvz -C /tmp/ && \
+          mv /tmp/nu-${NU_VER}-x86_64-unknown-linux-gnu /opt/nu
+
+  "omr:gcp_dev":
+    dockerfile_inline: |
+      FROM gcr.io/google.com/cloudsdktool/google-cloud-cli:489.0.0-stable
+
+      RUN apt update && apt install tmux vim -y
+
+  "omr:ansible":
+    dockerfile_inline: |
+      FROM python:3.11.12-slim-bullseye
+      ENV ANSIBLE_DIR=/opt/ansible
+      ENV PATH=$PATH:$ANSIBLE_DIR/bin
+
+      RUN python3 -m venv $ANSIBLE_DIR && \
+          $ANSIBLE_DIR/bin/pip install ansible==11.3.0
+
+x-common-go: &common-go
+  image: golang:1.22.12-bookworm
+  exec: go
+  env:
+    GOCACHE: /cache/gocache
+    GOMODCACHE: /cache/gomodcache
+  volumes:
+    - "go_cache:/cache"
+
+x-common-redbox: &common-discovery
+  aliases:
+    sh: /bin/sh
+  volumes:
+    - "~/me/iomarmochtar/shared/redbox:/shared"
+
+x-common-mysh: &common-mysh
+  build: &build-mysh 
+    depends_on: omr:mysh_base
+    dockerfile_inline: |
+      FROM omr:mysh_base
+
+      ARG USER=user1
+      ARG HOME_DIR=/sbx/$USER
+
+      RUN adduser --home $HOME_DIR --shell /opt/nu/nu --disabled-password --gecos '' $USER && \
+          adduser $USER sudo && \
+          echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+      WORKDIR $HOME_DIR
+      USER $USER
+  platform: linux/amd64
+  exec: /opt/nu/nu
+  sandbox_mount:
+    enable: false
+  persist:
+    enable: true
+
+programs:
+  go122:
+    <<: *common-go
+
+  poetry3.14:
+    image: omr:poetry3.14
+    build:
+      dockerfile_inline: |
+        FROM python:3.14.0a7-slim-bullseye
+        ENV POETRY_HOME=/opt/poetry
+        ENV PYENV=/opt/pyenv
+
+        RUN apt update && apt install make build-essential libffi-dev -y && \
+            python3 -m venv $POETRY_HOME && \
+            $POETRY_HOME/bin/pip install poetry==2.1.2 && \
+            $POETRY_HOME/bin/poetry config virtualenvs.path $PYENV && \
+            ln -s /opt/poetry/bin/poetry /usr/local/bin/poetry
+    exec: poetry
+    aliases:
+      sh: /bin/bash
+      py: python3
+      make: make
+    volumes:
+      - pyenv314_${VOL_DIR}:/opt/pyenv
+
+  poetry:
+    image: omr:poetry
+    build:
+      dockerfile_inline: |
+        FROM python:3.11.12-slim-bullseye
+        ENV POETRY_HOME=/opt/poetry
+        ENV PYENV=/opt/pyenv
+
+        RUN apt update && apt install make -y && \
+            python3 -m venv $POETRY_HOME && \
+            $POETRY_HOME/bin/pip install poetry==2.1.2 && \
+            $POETRY_HOME/bin/poetry config virtualenvs.path $PYENV && \
+            ln -s /opt/poetry/bin/poetry /usr/local/bin/poetry
+    exec: poetry
+    aliases:
+      sh: /bin/bash
+      py: python3
+      make: make
+    volumes:
+      - pyenv_${VOL_DIR}:/opt/pyenv
+
+  ansible11: &ansible11
+    image: omr:ansible
+    exec: /opt/ansible/bin/ansible
+    aliases:
+      sh: /bin/bash
+      playbook: ansible-playbook
+      inventory: ansible-inventory
+      vault: ansible-vault
+      galaxy: ansible-galaxy
+
+  ansible11-gcp:
+    <<: *ansible11
+    volumes:
+      - gcloud_config:/root/.config/gcloud
+
+  py314:
+    image: python:3.14.0a7-slim-bullseye
+    exec: python
+    network: host
+    aliases:
+      sh: /bin/bash
+
+  ruby3.3:
+    image: ruby:3.3.8-slim-bookworm
+    exec: ruby
+    aliases:
+      irb: /usr/local/bin/irb
+      bundle: /usr/local/bin/bundle
+      gem: /usr/local/bin/gem
+      sh: /bin/bash
+
+  node23:
+    image: node:23.11.0-bookworm 
+    exec: node
+    aliases:
+      npm: npm
+
+  tf1_11:
+    image: hashicorp/terraform:1.11
+    exec: terraform
+    aliases:
+      sh: /bin/sh
+    volumes:
+      - gcloud_config:/root/.config/gcloud:ro
+
+  gcloud:
+    image: omr:gcp_dev
+    exec: gcloud
+    platform: linux/amd64
+    hostname: cloudev
+    aliases:
+      sh: /bin/bash
+    volumes:
+      - gcloud_config:/root/.config/gcloud
+
+  myshell:
+    image: omr:mysh_omarov
+    <<: *common-mysh
+    build:
+      <<: *build-mysh
+      args:
+        USER: omarov
+    hostname: imah
+    volumes:
+      - "mysh_omarov:/sbx/omarov"
+      - "~/me/iomarmochtar/shared/mysh:/shared:ro"
+
+  deno2.2:
+    image: denoland/deno:debian-2.2.12
+    exec: deno
+    aliases:
+      sh: /bin/bash
+
+  # sec
+  zizmor:
+    image: ghcr.io/woodruffw/zizmor:1.6.0
+    exec: /usr/bin/zizmor
+
+  nuclei34:
+    image: projectdiscovery/nuclei:v3.4
+    exec: nuclei
+    <<: *common-discovery
+
+  subfinder26:
+    image: projectdiscovery/subfinder:v2.6.8 
+    exec: subfinder
+    <<: *common-discovery
