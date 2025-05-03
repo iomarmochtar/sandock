@@ -2,6 +2,11 @@
   <img src="./docs/imgs/logo.jpg" alt="Sandock-Logo" width="40%" />
 </p>
 
+<div align="center">
+<a href="https://codecov.io/github/iomarmochtar/sandock" > 
+ <img src="https://codecov.io/github/iomarmochtar/sandock/graph/badge.svg?token=YEUQ0RQBLW"/> 
+ </a>
+</div>
 
 <div align="center" >
 A <b>docker</b> (or similar) command wrapper to safely execute any program/script in sandboxed environment.

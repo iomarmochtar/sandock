@@ -6,6 +6,7 @@ on:
     paths:
       - 'sandock/**'
       - 'tests/**'
+      - '.github/**'
   pull_request:
     paths:
       - 'sandock/**'
@@ -14,7 +15,6 @@ on:
 
 jobs:
   tests:
-    needs: check_changes
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -49,7 +49,9 @@ jobs:
       - name: Run tests and generate coverage report
         run: make test-all
 
-#      - name: Upload coverage reports to Codecov
-#        uses: codecov/codecov-action@v3
-#        env:
-#          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      - name: Upload coverage reports to Codecov
+        if: github.ref == 'refs/heads/main'
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: iomarmochtar/sandock

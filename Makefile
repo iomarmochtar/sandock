@@ -9,6 +9,7 @@ test:
 	$(PR) coverage run --source=sandock -m unittest discover -s tests
 	$(PR) coverage report
 	$(PR) coverage html
+	$(PR) coverage xml
 
 PHONY: tidy
 tidy:
