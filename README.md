@@ -1,15 +1,19 @@
 <p align="center">
-  <img src="./docs/imgs/logo.jpg" alt="Sandock-Logo" width="40%" />
+  <img src="https://raw.githubusercontent.com/iomarmochtar/sandock/main/docs/imgs/logo.jpg" alt="Sandock-Logo" width="40%" />
 </p>
 
 <div align="center">
-<a href="https://codecov.io/github/iomarmochtar/sandock" > 
- <img src="https://codecov.io/github/iomarmochtar/sandock/graph/badge.svg?token=YEUQ0RQBLW"/> 
- </a>
+  <img src="https://img.shields.io/pypi/v/sandock"/> 
+  <a href="https://codecov.io/github/iomarmochtar/sandock"> 
+    <img src="https://codecov.io/github/iomarmochtar/sandock/graph/badge.svg?token=YEUQ0RQBLW"/> 
+  </a>
+  <img src="https://img.shields.io/github/license/iomarmochtar/sandock"/> 
+  <img src="https://img.shields.io/pypi/pyversions/sandock"/> 
 </div>
 
 <div align="center" >
-A <b>docker</b> (or similar) command wrapper to safely execute any program/script in sandboxed environment.
+  A <b>docker</b> (or similar) command wrapper to safely execute any program/script in sandboxed environment
+  (<a href="https://youtube.com/shorts/d9NoPx_eRzs?feature=share" >demo</a>).
 </div>
 
 

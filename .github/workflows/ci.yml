@@ -15,6 +15,8 @@ on:
 
 jobs:
   tests:
+    permissions:
+      actions: read
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -22,6 +24,8 @@ jobs:
         python-version: ["3.9"]
     steps:
       - uses: actions/checkout@v3
+        with:
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
@@ -29,7 +33,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install poetry
-        uses: snok/install-poetry@v1
+        uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a
         with:
           version: 2.1.2
           virtualenvs-create: true
@@ -51,7 +55,7 @@ jobs:
 
       - name: Upload coverage reports to Codecov
         if: github.ref == 'refs/heads/main'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@ad3126e916f78f00edff4ed0317cf185271ccc2d
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: iomarmochtar/sandock
