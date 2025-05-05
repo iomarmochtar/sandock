@@ -329,8 +329,8 @@ class MainConfig(object):
                         )
 
                     # if it's already as object, take the raw config that still in KV
-                    if isinstance(extend_props, object):
-                        extend_props = extend_props._raw  # type: ignore[attr-defined]
+                    if hasattr(extend_props, "_raw"):
+                        extend_props = extend_props._raw
 
                     extends = dict_merge(extends, extend_props)
 
