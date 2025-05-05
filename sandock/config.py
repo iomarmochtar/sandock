@@ -6,11 +6,12 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from pathlib import Path
-from .shared import dict_merge, log, KV
+from .shared import dict_merge, log, KV, ensure_home_dir_special_prefix
 from .exceptions import SandboxExecConfig
 
 CONFIG_PATH_ENV = "SNDK_CFG"
 DOT_CONFIG = ".sandock"
+EXTENDS_PARAM = "extends"
 
 
 def build_if_set(o: object, attr: str, cls: Any) -> None:
@@ -60,6 +61,10 @@ def read_config(path: str) -> KV:
     """
     conf_format = Path(path).suffix
     decoder = CONFIG_FORMAT_DECODER_MAPS.get(conf_format, json_decoder)
+
+    # ensure the proper home dir pattern is set
+    path = ensure_home_dir_special_prefix(path=path)
+
     with open(path, "r") as fh:
         return decoder(content=fh.read())
 
@@ -314,7 +319,27 @@ class MainConfig(object):
                 if not isinstance(v, dict):
                     continue
 
-                getattr(self, name)[k] = prop_cls(**v)
+                # extend to another declaration, the direct declaration will be the top priority
+                extends: KV = {}
+                for extend_key in v.pop(EXTENDS_PARAM, []):
+                    extend_props = prop_val.get(extend_key)
+                    if not extend_props:
+                        raise SandboxExecConfig(
+                            f"no config found to be extended by key `{extend_key}`"
+                        )
+
+                    # if it's already as object, take the raw config that still in KV
+                    if isinstance(extend_props, object):
+                        extend_props = extend_props._raw  # type: ignore[attr-defined]
+
+                    extends = dict_merge(extends, extend_props)
+
+                if extends:
+                    v = dict_merge(extends, v)
+
+                config_obj = prop_cls(**v)
+                config_obj._raw = v
+                getattr(self, name)[k] = config_obj
 
         # at least need to define one program
         if not self.programs:

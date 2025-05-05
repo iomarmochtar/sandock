@@ -1,5 +1,7 @@
 import logging
 import subprocess
+import os
+import re
 from typing import Any, Union, Dict
 
 
@@ -88,3 +90,14 @@ def dict_merge(dict1: KV, dict2: KV) -> KV:
             result[key] = value
 
     return result
+
+
+home_dir_re = re.compile(r"^(~|\$HOME|\$\{HOME\})")
+
+
+def ensure_home_dir_special_prefix(path: str) -> str:
+    """
+    ensure the path that begins with ~, $HOME, ${HOME}
+    are converted with the real home directory
+    """
+    return home_dir_re.sub(os.environ["HOME"], path)

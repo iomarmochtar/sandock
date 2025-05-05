@@ -292,10 +292,38 @@ class MainConfigTest(BaseTestCase):
     def test_post_init_expand_configs(self) -> None:
         # test the expanded configuration
         with mock.patch.object(Configuration, "expand_configs") as c_expand_cfgs:
-            c_expand_cfgs.return_value = dict(volumes=dict(abc=dict()))
+            c_expand_cfgs.return_value = {"volumes": {"abc": {}}}
 
             o = self.obj()
             self.assertEqual(o.volumes["abc"], Volume())
+
+    def test_post_init_extends(self) -> None:
+        sample_cfg = dict(
+            programs=dict(
+                anotherpy=dict(image="pypy:3.11", exec="python3"),
+                pydev=dict(
+                    image="python:3.11", exec="python", volumes=["pydev:/pydev"]
+                ),
+                pydev314=dict(extends=["anotherpy", "pydev"], image="python:314"),
+            )
+        )
+        o = self.obj(**sample_cfg)
+
+        self.assertTrue(
+            o.programs["pydev314"],
+            Program(image="python:3.14", exec="python3", volumes=["pydev:/pydev"]),
+        )
+
+    def test_post_init_extends_not_found(self) -> None:
+        sample_cfg = dict(
+            programs=dict(
+                pydev314=dict(extends=["not_exists"], image="python:314"),
+            )
+        )
+        with self.assertRaisesRegex(
+            SandboxExecConfig, "no config found to be extended by key `not_exists`"
+        ):
+            self.obj(**sample_cfg)
 
     def test_volumes(self) -> None:
         o = self.obj(volumes=dict(pyvol=dict(labels={"mark.label.com": "setset"})))

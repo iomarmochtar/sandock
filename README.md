@@ -70,7 +70,7 @@ Reproduceable environment is a hot topic now days and can be achived easly by us
 
 Basically, `sandock` only use Python's builtins except you will use **yaml** based configuration with it's strong points ([anchor, multiline, commenting, etc](https://yaml.org/spec/1.1/)) that needs to install additional package, just change the package name from `sandock` to `'sandock[yml-config]'`.
 
-> [!INFO]
+> [!NOTE]
 > we strongly suggest to use [pipx](https://pipx.pypa.io/stable/installation/#installing-pipx) for easier in managing the downloaded executeable.
 
 ```bash
@@ -118,7 +118,7 @@ See [Configuration section](#️-configuration) for more information about it.
 
 ### 4. Configure the shortcuts
 
-> [!INFO]
+> [!NOTE]
 >
 > This step is optional, skip it if not intended to have a program's shortcut
 
@@ -132,7 +132,7 @@ echo "source ~/.sandock_aliases" >> ~/.zshrc
 alternatively, just add following line in your shell profile.
 
 ```bash
-eval $(sandock alias --expand)
+eval "$(sandock alias --expand)"
 ```
 
 **note:** argument `--expand` will include the program's aliases in generated output, from the sample config above you can have shortcut `ruby3.3-bundle` in executing command `bundle` inside container.
@@ -201,6 +201,7 @@ You can find the some of the samples in [examples](./examples/).
 | .programs                                       | `{}`            | list of programs are defined here                                                                                                                                                                                                                        | `yes`    |
 | .programs[name].image                           |                 | container image that will be loaded, this also will be set as a reference of image name for the build/custom one                                                                                                                                         | `yes`    |
 | .programs[name].exec                            |                 | path of executeable inside container that will be ran as **entrypoint**, this is will be the main one                                                                                                                                                    | `yes`    |
+| .programs[name].extends                         | `[]`            | extending from another program config, ensure the config name is exists                                                                                                                                                                                  | `no`     |
 | .programs[name].aliases                         | `{}`            | the maps of any other executeable inside container, during subcommand **alias** by the argument **--generate**, this will generate alias by pattern "[program_name]-[alias]"                                                                             | `no`     |
 | .programs[name].interactive                     | `True`          | interactive mode (**-it** ~> keep STDIN and provide pseudo TTY )                                                                                                                                                                                         | `no`     |
 | .programs[name].allow_home_dir                  | `False`         | allow ran in (top of) home directory if auto sandbox mount enabled                                                                                                                                                                                       | `no`     |
@@ -230,10 +231,22 @@ You can find the some of the samples in [examples](./examples/).
 | .programs[name].pre_exec_cmds                   | `[]`            | list of commands that will be execute before running the container                                                                                                                                                                                       | `no`     |
 | .volumes                                        | `{}`            | list of volume that will be created by `sandock`, all of volume will have label `created_by.sandock` with value `true`                                                                                                                                   | `no`     |
 | .volumes[name].driver                           | `"local"`       | volume driver, ensure it's supported by the container engine                                                                                                                                                                                             | `no`     |
+| .volumes[name].extends                          | `[]`            | extending from another volume config, ensure the config name is exists                                                                                                                                                                                   | `no`     |
 | .volumes[name].driver_opts                      | `{}`            | key-value configuration of driver options                                                                                                                                                                                                                | `no`     |
 | .volumes[name].labels                           | `{}`            | key-value label that will be attach to the created volume                                                                                                                                                                                                | `no`     |
 | .images                                         | `{}`            | list of container image build definition                                                                                                                                                                                                                 | `no`     |
+| .images[name].extends                           | `[]`            | extending from another image config, ensure the config name is exists                                                                                                                                                                                    | `no`     |
 | .images[name].context                           |                 | path/location during the build time                                                                                                                                                                                                                      | `no`     |
+| .images[name].dockerfile_inline                 |                 | docker file inline declaration, this cannot be mixed with `.dockerFile`                                                                                                                                                                                  | `no`     |
+| .images[name].dockerFile                        |                 | path of `Dockerfile`, this cannot be mixed with `.dockerfile_inline`                                                                                                                                                                                     | `no`     |
+| .images[name].depends_on                        |                 | set dependency of another custom image build, to be ensured exists/created first                                                                                                                                                                         | `no`     |
+| .images[name].args                              | `{}`            | kv that will be injected as build args                                                                                                                                                                                                                   | `no`     |
+| .images[name].extra_build_args                  | `[]`            | list of additional command argument that will be provided during build time                                                                                                                                                                              | `no`     |
+| .networks                                       | `{}`            | list of custom network  declaration                                                                                                                                                                                                                      | `no`     |
+| .networks[name].extends                         | `[]`            | extending from another network config, ensure the config name is exists                                                                                                                                                                                  | `no`     |
+| .networks[name].driver                          | `"bridge"`      | driver type                                                                                                                                                                                                                                              | `no`     |
+| .networks[name].driver_opts                     | `{}`            | additional network driver options                                                                                                                                                                                                                        | `no`     |
+| .networks[name].params                          | `{}`            | additional extra parameters in building network                                                                                                                                                                                                          | `no`     |
 
 </details>
 
@@ -261,10 +274,9 @@ See how it can be done in variable **CONFIG_FORMAT_DECODER_MAPS** inside [sandbo
 
 ## Commands
 
-> [!INFO]
+> [!NOTE]
 >
 > to enable debug mode, you can set argument **--debug** or set env var **SNDK_DEBUG** with value **true** as follow
-
 
 ### run
 
