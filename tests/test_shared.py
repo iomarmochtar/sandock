@@ -1,6 +1,8 @@
 import unittest
 import tempfile
 import sys
+import os
+from unittest import mock
 from inspect import cleandoc
 from subprocess import CalledProcessError
 from sandock import shared
@@ -38,6 +40,23 @@ class RunShellTest(BaseTestCase):
     def test_piped_command(self) -> None:
         result = shared.run_shell(command="echo 'lazy fox' | sed 's/lazy/smart/g'")
         self.assertEqual(result.stdout, "smart fox\n")
+
+    @mock.patch.dict(os.environ, dict(HOME="/home/sweet_home"))
+    def test_ensure_home_dir_special_prefix(self) -> None:
+        self.assertEqual(
+            shared.ensure_home_dir_special_prefix(path="~/path/to.yml"),
+            "/home/sweet_home/path/to.yml",
+        )
+
+        self.assertEqual(
+            shared.ensure_home_dir_special_prefix(path="$HOME/path/to.yml"),
+            "/home/sweet_home/path/to.yml",
+        )
+
+        self.assertEqual(
+            shared.ensure_home_dir_special_prefix(path="${HOME}/path/to.yml"),
+            "/home/sweet_home/path/to.yml",
+        )
 
 
 if __name__ == "__main__":
