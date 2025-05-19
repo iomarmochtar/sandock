@@ -2,10 +2,12 @@ import logging
 import subprocess
 import os
 import re
-from typing import Any, Union, Dict
+from typing import Any, Union, Dict, List
 
 
 KV = Dict[str, Any]
+CONFIG_PATH_ENV = "SNDK_CFG"
+SANDBOX_DEBUG_ENV = "SNDK_DEBUG"
 
 
 class LogColorFormatter(logging.Formatter):
@@ -50,7 +52,7 @@ log = init_logger(name="sandbox-exec", lvl=logging.INFO)
 
 
 def run_shell(  # type: ignore[no-untyped-def]
-    command: str, check_err: bool = True, **cmd_args
+    command: Union[str, List[str]], check_err: bool = True, **cmd_args
 ) -> subprocess.CompletedProcess:  # type: ignore[type-arg]
     """
     wrapper of shell command execution
@@ -63,6 +65,9 @@ def run_shell(  # type: ignore[no-untyped-def]
         )
         | cmd_args
     )
+    if isinstance(command, list):
+        command = " ".join(command)
+
     log.debug(f"shell cmd: {command}, check_err: {check_err}, cmd_args: {cmd_args}")
     call_cmd = subprocess.run(command, **cmd_args)
     if check_err and call_cmd.returncode != 0:

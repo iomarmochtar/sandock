@@ -2,13 +2,13 @@ import unittest
 import os
 import sys
 import logging
+import subprocess
+from subprocess import CompletedProcess
 from unittest import mock
 from contextlib import contextmanager
-from typing import Iterator
-from sandock.shared import log
+from typing import Iterator, List
+from sandock.shared import log, SANDBOX_DEBUG_ENV, CONFIG_PATH_ENV, KV
 from sandock.config import MainConfig, Program
-from sandock.cli import SANDBOX_DEBUG_ENV
-from sandock.config import CONFIG_PATH_ENV
 
 
 def enable_debug() -> None:
@@ -28,6 +28,23 @@ def temp_enable_debug() -> Iterator[None]:
 def mock_yaml_module_not_installed() -> Iterator[None]:
     with mock.patch.dict(sys.modules, dict(yaml=None)):
         yield
+
+
+@contextmanager
+def mock_shell_exec(
+    mock_cmd_name: str = "mock_shell_exec", side_effects: List[KV] = []
+) -> Iterator[mock.MagicMock]:
+    # the side effects are the list of CompletedProcess kwargs
+    with mock.patch.object(subprocess, "run") as mock_run:
+        if not side_effects:
+            mock_run.return_value = CompletedProcess(returncode=0, args=mock_cmd_name)
+        else:
+            mock_run.side_effect = [
+                CompletedProcess(**(dict(args=mock_cmd_name) | cp_kwargs))
+                for cp_kwargs in side_effects
+            ]
+
+        yield mock_run
 
 
 def fixture_path(*adds) -> str:

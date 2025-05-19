@@ -1,0 +1,41 @@
+backup:
+  volume_labels:
+    backup.mochtar.net: "true"
+
+volumes:
+  mysh:
+    labels:
+      backup.mochtar.net: "true"
+
+programs:
+  myshell:
+    image: omr:mysh
+    build:
+      dockerfile_inline: |
+        FROM ubuntu:22.04
+
+        ARG USER=user1
+        ARG HOME_DIR=/sbx/$USER
+        ARG NU_VER=0.103.0
+
+        RUN apt update && apt install -y vim tmux python3 sudo bind9-utils git apt-transport-https ca-certificates gnupg curl && \
+            curl -s -L https://github.com/nushell/nushell/releases/download/${NU_VER}/nu-${NU_VER}-x86_64-unknown-linux-gnu.tar.gz | tar xvz -C /tmp/ && \
+            mv /tmp/nu-${NU_VER}-x86_64-unknown-linux-gnu /opt/nu
+
+        RUN adduser --home $HOME_DIR --shell /opt/nu/nu --disabled-password --gecos '' $USER && \
+            adduser $USER sudo && \
+            echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+        WORKDIR $HOME_DIR
+        USER $USER
+      args:
+        USER: omarov
+    exec: /opt/nu/nu
+    platform: linux/amd64
+    sandbox_mount:
+      enable: false
+    persist:
+      enable: true
+    hostname: imah
+    volumes:
+      - "mysh:/sbx/omarov"

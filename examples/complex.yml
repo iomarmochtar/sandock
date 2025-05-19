@@ -1,6 +1,6 @@
 config:
-  includes:
-    - ~/me/iomarmochtar/werk/job1.yml
+  #includes:
+  #  - ~/me/iomarmochtar/werk/job1.yml
   current_dir_conf_excludes:
     - ^.*?/me/rnd/untrusted/.*?$
     - ^/tmp/test.*?$

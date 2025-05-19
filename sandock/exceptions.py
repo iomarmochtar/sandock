@@ -10,3 +10,11 @@ class SandboxExecConfig(SandboxBaseException):
 
 class SandboxExecution(SandboxBaseException):
     pass
+
+
+class SandboxVolumeExec(SandboxBaseException):
+    pass
+
+
+class SandboxVolumeNotFound(SandboxBaseException):
+    pass
