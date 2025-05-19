@@ -4,7 +4,8 @@ import tempfile
 import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-from .config import MainConfig, Program
+from .config import MainConfig
+from .config.program import Program
 from .shared import log, run_shell
 from .exceptions import SandboxExecution
 

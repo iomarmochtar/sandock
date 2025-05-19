@@ -11,20 +11,17 @@ from sandock.exceptions import SandboxExecConfig
 from sandock.config import (
     ImageBuild,
     Program,
-    ContainerUser,
-    PersistContainer,
     Volume,
     Network,
-    SandboxMount,
     Configuration,
     Execution,
     MainConfig,
     load_config_file,
-    dot_config_finder,
     main_config_finder,
-    yaml_decoder,
-    json_decoder,
 )
+from sandock.config.program import ContainerUser, PersistContainer, SandboxMount
+from sandock.config.backup import Backup
+from sandock.config._helpers import dot_config_finder, yaml_decoder, json_decoder
 
 
 class VolumeTest(BaseTestCase):
@@ -281,6 +278,7 @@ class MainConfigTest(BaseTestCase):
 
         self.assertEqual(o.execution, Execution())
         self.assertEqual(o.config, Configuration())
+        self.assertEqual(o.backup, Backup())
         self.assertEqual(o.volumes, {})
         self.assertEqual(o.images, {})
         self.assertEqual(o.networks, {})

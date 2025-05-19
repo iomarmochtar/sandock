@@ -5,13 +5,12 @@ import subprocess
 from typing import List, Tuple, Dict, Any, Optional
 from argparse import ArgumentParser, Namespace, REMAINDER, ArgumentTypeError
 from importlib.metadata import metadata
-from .config import MainConfig, load_config_file, CONFIG_PATH_ENV, main_config_finder
-from .shared import log
+from .config import MainConfig, load_config_file, main_config_finder
+from .shared import log, SANDBOX_DEBUG_ENV, CONFIG_PATH_ENV, run_shell
 from .sandbox import SandboxExec
-from .exceptions import SandboxBaseException, SandboxExecConfig
+from .volume import VolumeMgr
+from .exceptions import SandboxBaseException, SandboxExecConfig, SandboxVolumeExec
 from ._version import __version__, __build_hash__
-
-SANDBOX_DEBUG_ENV = "SNDK_DEBUG"
 
 
 def parse_arg_key_value(s: str) -> Tuple[str, str]:
@@ -121,6 +120,188 @@ class CmdAlias(BaseCommand):
                 self.output(alias_exec_line)
 
 
+class CmdVolume(BaseCommand):
+    description = "manage container volumes"
+
+    @staticmethod
+    def register_arguments(parser: ArgumentParser) -> None:
+        subs = parser.add_subparsers(
+            title="volume action", dest="volume_action", required=True
+        )
+
+        # list
+        subs.add_parser("list", help="list all volume that created by sandock")
+
+        # backup subcmd
+        backup_sub = subs.add_parser("backup", help="backup related command")
+        # the default action is to create a backup
+        backup_sub.add_argument(
+            "-a",
+            "--all",
+            help="backup all volumes based mentioned labels in configuration",
+            action="store_true",
+            default=False,
+        )
+        backup_sub.add_argument(
+            "--target", help="specific volume name that will be set as target backup"
+        )
+        backup_sub.add_argument(
+            "-e", "--exclude", action="append", help="explicit exclude volume to backup"
+        )
+        backup_parser = backup_sub.add_subparsers(dest="backup_action")
+
+        # backup - snapshot
+        snapshot_sub = backup_parser.add_parser(
+            "snapshot",
+            help="show all existing backup snapshot, by default it's only shown the latest one",
+        )
+        snapshot_sub.add_argument(
+            "--all",
+            help="show all snapshots",
+            action="store_true",
+            default=False,
+        )
+        snapshot_sub.add_argument(
+            "--vol",
+            help="only show snapshot the specific volume backup",
+            default=None,
+        )
+
+        # backup - restore
+        restore_sub = backup_parser.add_parser(
+            "restore", help="backup - volume restore command"
+        )
+        restore_sub.add_argument(
+            "-i",
+            "--snapshot-id",
+            help="snapshot ID that will be restored",
+            required=True,
+        )
+        restore_sub.add_argument(
+            "--vol",
+            help="target volume name that will be restored, if not exists then it will create the new one",
+            required=True,
+        )
+        restore_sub.add_argument(
+            "-f",
+            "--force",
+            help="force execution even the target volume is already exists, will be ran overrides action",
+            action="store_true",
+            default=False,
+        )
+        restore_sub.add_argument(
+            "--exclude", action="append", help="exclude path to be restored"
+        )
+        restore_sub.add_argument(
+            "--overwrite",
+            help="set overwrite behaviour",
+            default="never",
+            choices=["always", "if-changed", "if-newer", "never"],
+        )
+
+        # backup - restic
+        restic_sub = backup_parser.add_parser(
+            "restic",
+            help="backup - restic, direct restic command execution. use with cautions !!!",
+        )
+        restic_sub.add_argument(
+            "--extra-run-args",
+            help="additional docker run arguments, eg: mounting the volume etc.",
+        )
+        restic_sub.add_argument(
+            "restic_params", nargs=REMAINDER, help="the forwarded arguments/params"
+        )
+
+    def run_backup(self, vol_mgr: VolumeMgr) -> None:
+        # snapshot handler
+        if self.args.backup_action == "snapshot":
+            datetime_format = "%Y-%m-%d %H:%M:%S"
+            for snapshot in vol_mgr.backup.snapshot_list(
+                specific_volname=self.args.vol, show_all=self.args.all
+            ):
+                self.output(
+                    f"id: {snapshot.id} - date: {snapshot.backup_time.strftime(datetime_format)} (UTC) - size: {snapshot.size} - vol: {snapshot.vol_name}"
+                )
+
+            return
+
+        # restore handler
+        if self.args.backup_action == "restore":
+            backup_mgr = vol_mgr.backup
+            snapshot = backup_mgr.get_snapshot_by(id=self.args.snapshot_id)
+            backup_mgr.restore(
+                snapshot=snapshot,
+                target_volume=self.args.vol,
+                force=self.args.force,
+                excludes=self.args.exclude or [],
+                overwrite=self.args.overwrite,
+            )
+            return
+
+        # direct restic handler
+        if self.args.backup_action == "restic":
+            docker_params = []
+            if self.args.extra_run_args:
+                docker_params.append(self.args.extra_run_args)
+
+            run_shell(
+                command=vol_mgr.backup.restic_run_cmd(
+                    extra_docker_params=docker_params,
+                    restic_args=self.args.restic_params,
+                ),
+                capture_output=False,
+            )
+            return
+
+        # create backup handler
+        if self.args.target and self.args.all:
+            raise SandboxVolumeExec(
+                "cannot combine specific target with all volume option"
+            )
+
+        if not self.args.target and not self.args.all:
+            raise SandboxVolumeExec("you must set explicitly volume backup target")
+
+        targets = []
+        if self.args.target:
+            if not vol_mgr.vol_exists(name=self.args.target):
+                raise SandboxVolumeExec(
+                    f"volume by name `{self.args.target}` is not exists"
+                )
+
+            targets = [self.args.target]
+        # if not specific then all volumes as configured
+        else:
+            vol_backup_labels = self.config.backup.volume_labels
+            if not vol_backup_labels:
+                raise SandboxVolumeExec(
+                    "empty volume label filter for backup target, set it on .backup.volume.labels"
+                )
+
+            targets = [
+                vol_info["Name"]
+                for vol_info in vol_mgr.volume_list(label_filters=vol_backup_labels)
+            ]
+
+        if not targets:
+            log.warning("no any volume backup target available")
+            return
+
+        vol_mgr.backup.create(targets=targets, excludes=self.args.exclude or [])
+
+    def main(self) -> None:
+        vol_mgr = VolumeMgr(cfg=self.config)
+
+        sub_cmd = self.args.volume_action
+        if sub_cmd == "list":
+            for vol_info in vol_mgr.created_by_sandock:
+                log.debug(f"volume info ~> {vol_info}")
+                self.output(vol_info["Name"])
+
+        elif sub_cmd == "backup":
+            self.run_backup(vol_mgr=vol_mgr)
+
+
 class CmdRun(BaseCommand):
     description = "run program"
 
@@ -220,38 +401,24 @@ class CmdRun(BaseCommand):
 
         return (program_args, self.override_properties(args=snbx_args))
 
-    def reraise_if_debug(self, e: Exception) -> None:
-        """
-        raise the exception if currently in debug mode
-        """
-        if log.level == logging.DEBUG:
-            raise e
-
     def main(self) -> None:
         program_args, overrides = self.remainder_args
         log.debug(f"overrides args ~> {overrides}")
-        # remove the python stack trace noise on non 0 exit, except in debug mode
-        try:
-            snbx = SandboxExec(
-                name=self.args.program, cfg=self.config, overrides=overrides
-            )
-            snbx.do(args=program_args)
-        except subprocess.CalledProcessError as e:
-            self.reraise_if_debug(e=e)
+        snbx = SandboxExec(name=self.args.program, cfg=self.config, overrides=overrides)
+        snbx.do(args=program_args)
 
-            log.error(f"exit code {e.returncode}, see the details in debug mode")
-            sys.exit(e.returncode)
 
-        except SandboxBaseException as e:
-            self.reraise_if_debug(e=e)
-
-            log.error(f"{e}, see the details in debug mode")
-            sys.exit(1)
+def reraise_if_debug(e: Exception) -> None:
+    """
+    raise the exception if currently in debug mode
+    """
+    if log.level == logging.DEBUG:
+        raise e
 
 
 def main(args: Optional[List[str]] = None) -> None:
     meta = metadata("sandock")
-    cmds = dict(list=CmdList, alias=CmdAlias, run=CmdRun)
+    cmds = dict(list=CmdList, alias=CmdAlias, run=CmdRun, volume=CmdVolume)
     parser = ArgumentParser(
         description="A wrapper in running command inside container sandboxed environment",
         epilog=f"Author: {meta['author']} <{meta['author-email']}>",
@@ -289,4 +456,17 @@ def main(args: Optional[List[str]] = None) -> None:
     if not exec_cls:
         return parser.print_help()
 
-    exec_cls(args=parsed_args).main()
+    # remove the python stack trace noise on non 0 exit, except in debug mode
+    try:
+        exec_cls(args=parsed_args).main()
+    except subprocess.CalledProcessError as e:
+        reraise_if_debug(e=e)
+
+        log.error(f"exit code {e.returncode}, see the details in debug mode")
+        sys.exit(e.returncode)
+
+    except SandboxBaseException as e:
+        reraise_if_debug(e=e)
+
+        log.error(f"{e}, see the details in debug mode")
+        sys.exit(1)

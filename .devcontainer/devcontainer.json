@@ -11,5 +11,5 @@
 		    ]
 		}
 	    },
-	"postCreateCommand": "poetry install --with=dev"
+	"postCreateCommand": "poetry install --with=dev && cp examples/complex.yml ~/.sandock.yml"
 }
