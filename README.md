@@ -3,6 +3,9 @@
 </p>
 
 <div align="center">
+  <a href="https://deepwiki.com/iomarmochtar/sandock">
+    <img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki">
+  </a>
   <img src="https://img.shields.io/pypi/v/sandock"/> 
   <a href="https://codecov.io/github/iomarmochtar/sandock"> 
     <img src="https://codecov.io/github/iomarmochtar/sandock/graph/badge.svg?token=YEUQ0RQBLW"/> 
