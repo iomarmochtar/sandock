@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List
 from inspect import cleandoc
 from unittest import TestCase, mock
-from unittest.mock import Mock, MagicMock, PropertyMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 from datetime import datetime
 from sandock.exceptions import SandboxVolumeExec, SandboxVolumeNotFound
 from sandock.volume import (
@@ -73,6 +73,12 @@ class TestVolumeManager(TestCase):
                 mock_sh.call_args_list[0].args[0],
                 "docker volume ls --format=json --filter=label=label1='ok' --filter=label=label2='ok'",
             )
+    
+    @patch.object(VolumeMgr, "volume_list")
+    def test_created_by_sandock(self, mock_volume_list: MagicMock) -> None:
+        o = self.obj()
+        o.created_by_sandock
+        mock_volume_list.assert_called_once_with(label_filters={"created_by.sandock": "true"})
 
     def test_vol_exists(self) -> None:
         o = self.obj()
