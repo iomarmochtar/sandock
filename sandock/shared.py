@@ -2,7 +2,8 @@ import logging
 import subprocess
 import os
 import re
-from typing import Any, Union, Dict, List
+from hashlib import sha256
+from typing import Any, Union, Dict, List, Optional
 
 
 KV = Dict[str, Any]
@@ -106,3 +107,13 @@ def ensure_home_dir_special_prefix(path: str) -> str:
     are converted with the real home directory
     """
     return home_dir_re.sub(os.environ["HOME"], path)
+
+
+def file_hash(fpath: str, max_chars: Optional[int] = None) -> str:
+    """
+    calculate SHA256 of given text, default will return as 64 chars but it can be limited
+    """
+    with open(fpath, "r") as fh:
+        hex_digest = sha256(fh.read().encode("utf-8")).hexdigest()
+
+        return hex_digest[:max_chars] if max_chars is not None else hex_digest

@@ -66,6 +66,13 @@ def dummy_main_cfg(program_kwargs: dict = {}, **kwargs) -> MainConfig:
     return MainConfig(**kwargs)
 
 
+def extract_first_call_arg_list(m: mock.MagicMock) -> List[str]:
+    """
+    get all of first arguments of mocked list
+    """
+    return [x[0][0] for x in m.call_args_list]
+
+
 class BaseTestCase(unittest.TestCase):
 
     def setUp(self) -> None:

@@ -1,13 +1,45 @@
 import unittest
 import os
 import tempfile
-import subprocess
 from inspect import cleandoc
-from subprocess import CompletedProcess
+from pathlib import Path
 from unittest import mock
+from unittest.mock import MagicMock, PropertyMock
 from sandock.exceptions import SandboxExecution
 from sandock.sandbox import SandboxExec
-from helpers import dummy_main_cfg, BaseTestCase
+from sandock.config import MainConfig
+from helpers import (
+    dummy_main_cfg,
+    mock_shell_exec,
+    extract_first_call_arg_list,
+    BaseTestCase,
+)
+
+
+def sample_cfg_program_dependent_images() -> MainConfig:
+    dockerfile_inline = cleandoc(
+        """
+        FROM python:3.11
+        ARG USER=user1
+        
+        USER $USER
+        """
+    )
+
+    return dummy_main_cfg(
+        images=dict(
+            custom_pydev_base=dict(
+                dockerfile_inline=dockerfile_inline,
+                args=dict(USER="another"),
+            ),
+            custom_pydev=dict(
+                depends_on="custom_pydev_base",
+                dockerfile_inline="FROM custom_pydev_base",
+                extra_build_args=["--progress=quite"],
+            ),
+        ),
+        program_kwargs=dict(image="custom_pydev", platform="linux/amd64"),
+    )
 
 
 class SandboxExecTest(BaseTestCase):
@@ -172,7 +204,7 @@ class SandboxExecTest(BaseTestCase):
             )
 
     def test_ensure_volume_unmanaged(self) -> None:
-        with mock.patch.object(subprocess, "run") as rs:
+        with mock_shell_exec() as rs:
             """
             if not defined on volumes configuration then just skip it
             """
@@ -188,10 +220,9 @@ class SandboxExecTest(BaseTestCase):
             volumes=dict(myhome=dict()),
         )
 
-        with mock.patch.object(subprocess, "run") as rs:
-            rs.side_effect = [
-                CompletedProcess(returncode=0, args=[], stdout='[{"Name": "myhome"}]'),
-            ]
+        with mock_shell_exec(
+            side_effects=[dict(returncode=0, stdout='[{"Name": "myhome"}]')]
+        ) as rs:
             o = self.obj(cfg=cfg)
             o.ensure_volume(name="myhome")
 
@@ -209,11 +240,11 @@ class SandboxExecTest(BaseTestCase):
             volumes=dict(myhome=dict(labels={"backup.container.mochtar.net": "true"})),
         )
 
-        with mock.patch.object(subprocess, "run") as rs:
-            rs.side_effect = [
-                CompletedProcess(returncode=1, args=[]),  # inspect but no volume found
-                CompletedProcess(returncode=0, args=[]),
-            ]
+        side_effects = [
+            dict(returncode=1),  # inspect but no volume found
+            dict(returncode=0),
+        ]
+        with mock_shell_exec(side_effects=side_effects) as rs:
             o = self.obj(cfg=cfg)
             o.ensure_volume(name="myhome")
 
@@ -231,12 +262,12 @@ class SandboxExecTest(BaseTestCase):
         """
         if not using the custom network not shell command executed
         """
-        with mock.patch.object(subprocess, "run") as rs:
+        with mock_shell_exec() as rs:
             o = self.obj()
             o.ensure_network()
             rs.assert_not_called()
 
-        with mock.patch.object(subprocess, "run") as rs:
+        with mock_shell_exec() as rs:
             cfg = dummy_main_cfg(
                 networks=dict(another_mynet=dict()),
                 program_kwargs=dict(network="mynet"),
@@ -254,10 +285,9 @@ class SandboxExecTest(BaseTestCase):
             networks=dict(mynet=dict()), program_kwargs=dict(network="mynet")
         )
 
-        with mock.patch.object(subprocess, "run") as rs:
-            rs.side_effect = [
-                CompletedProcess(returncode=0, args=[], stdout='[{"Name": "mynet"}]'),
-            ]
+        with mock_shell_exec(
+            side_effects=[dict(returncode=0, stdout='[{"Name": "mynet"}]')]
+        ) as rs:
             o = self.obj(cfg=cfg)
             o.ensure_network()
 
@@ -275,11 +305,11 @@ class SandboxExecTest(BaseTestCase):
             networks=dict(mynet=dict()), program_kwargs=dict(network="mynet")
         )
 
-        with mock.patch.object(subprocess, "run") as rs:
-            rs.side_effect = [
-                CompletedProcess(returncode=1, args=[]),  # inspect but no network found
-                CompletedProcess(returncode=0, args=[]),
-            ]
+        side_effects = [
+            dict(returncode=1),  # inspect but no network found
+            dict(returncode=0),
+        ]
+        with mock_shell_exec(side_effects=side_effects) as rs:
             o = self.obj(cfg=cfg)
             o.ensure_network()
 
@@ -294,7 +324,7 @@ class SandboxExecTest(BaseTestCase):
             )
 
     def test_ensure_custom_image_not_defined(self) -> None:
-        with mock.patch.object(subprocess, "run") as rs:
+        with mock_shell_exec() as rs:
             o = self.obj()
             o.ensure_custom_image()
             rs.assert_not_called()
@@ -305,12 +335,9 @@ class SandboxExecTest(BaseTestCase):
             program_kwargs=dict(image="custom_pydev"),
         )
 
-        with mock.patch.object(subprocess, "run") as rs:
-            rs.side_effect = [
-                CompletedProcess(
-                    returncode=0, args=[], stdout='[{"Name": "custom_pydev"}]'
-                ),
-            ]
+        with mock_shell_exec(
+            side_effects=[dict(returncode=0, stdout='[{"Name": "custom_pydev"}]')]
+        ) as rs:
             o = self.obj(cfg=cfg)
             o.ensure_custom_image()
 
@@ -324,44 +351,57 @@ class SandboxExecTest(BaseTestCase):
         """
         create the image if not exists, recursively create another image that depends on it
         """
-        dockerfile_inline = cleandoc(
-            """
-            FROM python:3.11
-            ARG USER=user1
-            
-            USER $USER
-            """
-        )
-        cfg = dummy_main_cfg(
-            images=dict(
-                custom_pydev_base=dict(
-                    dockerfile_inline=dockerfile_inline,
-                    args=dict(USER="another"),
-                ),
-                custom_pydev=dict(
-                    depends_on="custom_pydev_base",
-                    dockerfile_inline="FROM custom_pydev_base",
-                    extra_build_args=["--progress=quite"],
-                ),
-            ),
-            program_kwargs=dict(image="custom_pydev", platform="linux/amd64"),
-        )
+        shell_mock_side_effects = [
+            dict(returncode=1),  # docker image inspect for custom_pydev_base
+            dict(returncode=0),  # docker image build custom_pydev_base
+            dict(returncode=1),  # docker image inspect for custom_pydev
+            dict(returncode=0),  # docker image build for custom_pydev
+        ]
+        with mock_shell_exec(side_effects=shell_mock_side_effects) as rs:
+            o = self.obj(cfg=sample_cfg_program_dependent_images())
 
-        with mock.patch.object(subprocess, "run") as rs:
-            rs.side_effect = [
-                CompletedProcess(
-                    returncode=1, args=[]
-                ),  # docker image inspect for custom_pydev_base
-                CompletedProcess(
-                    returncode=0, args=[]
-                ),  # docker image build custom_pydev_base
-                CompletedProcess(
-                    returncode=1, args=[]
-                ),  # docker image inspect for custom_pydev
-                CompletedProcess(
-                    returncode=0, args=[]
-                ),  # docker image build for custom_pydev
-            ]
+            with tempfile.TemporaryDirectory() as td:
+                docker_file_temp = os.path.join(td, "dockerfile")
+                with mock.patch.multiple(
+                    tempfile,
+                    mkdtemp=mock.Mock(return_value="/tmp/dst"),
+                    mktemp=mock.Mock(return_value=docker_file_temp),
+                ):
+                    o.ensure_custom_image()
+
+                    self.assertListEqual(
+                        extract_first_call_arg_list(m=rs),
+                        [
+                            "docker image inspect custom_pydev_base",
+                            f'docker build -t custom_pydev_base -f {docker_file_temp} --build-arg USER="another" --platform=linux/amd64 /tmp/dst',
+                            "docker image inspect custom_pydev",
+                            f"docker build -t custom_pydev -f {docker_file_temp} --progress=quite --platform=linux/amd64 /tmp/dst",
+                        ],
+                    )
+
+    @mock.patch.object(SandboxExec, "custom_image_dockerfile_store")
+    def test_ensure_custom_image_auto_create_dumped_exists(
+        self, dockerfile_store: MagicMock
+    ) -> None:
+        """
+        load the dumped path if it's enabled before create the custom image
+        """
+        cfg = dummy_main_cfg(
+            program_kwargs=dict(
+                platform="linux/amd64",
+                image="pydev:base",
+                build=dict(dockerfile_inline="FROM python:3.9", dump=dict(enable=True)),
+            )
+        )
+        dockerfile_store.return_value = MagicMock(
+            exists=MagicMock(return_value=True),
+            __str__=MagicMock(return_value="/path/to/dumped/image.tar"),
+        )
+        shell_mock_side_effects = [
+            dict(returncode=1),  # docker image inspect for pydev:base
+            dict(returncode=0),  # docker image load -i topath.tar
+        ]
+        with mock_shell_exec(side_effects=shell_mock_side_effects) as rs:
             o = self.obj(cfg=cfg)
 
             with tempfile.TemporaryDirectory() as td:
@@ -373,27 +413,108 @@ class SandboxExecTest(BaseTestCase):
                 ):
                     o.ensure_custom_image()
 
-                    rs.assert_called()
-                    self.assertEqual(rs.call_count, 4)
-                    self.assertEqual(
-                        rs.call_args_list[0].args[0],
-                        "docker image inspect custom_pydev_base",
-                    )
-                    self.assertEqual(
-                        rs.call_args_list[1].args[0],
-                        f'docker build -t custom_pydev_base -f {docker_file_temp} --build-arg USER="another" --platform=linux/amd64 /tmp/dst',
-                    )
-                    self.assertEqual(
-                        rs.call_args_list[2].args[0],
-                        "docker image inspect custom_pydev",
-                    )
-                    self.assertEqual(
-                        rs.call_args_list[3].args[0],
-                        f"docker build -t custom_pydev -f {docker_file_temp} --progress=quite --platform=linux/amd64 /tmp/dst",
+                    self.assertListEqual(
+                        extract_first_call_arg_list(m=rs),
+                        [
+                            "docker image inspect pydev:base",
+                            "docker image load -i /path/to/dumped/image.tar",
+                        ],
                     )
 
+    @mock.patch.object(SandboxExec, "custom_image_dockerfile_store")
+    def test_ensure_custom_image_auto_create_dumped_not_exists(
+        self, dockerfile_store: MagicMock
+    ) -> None:
+        """
+        dumped enabled, but not found, after custom image created then it will create one
+        """
+        cfg = dummy_main_cfg(
+            program_kwargs=dict(
+                platform="linux/amd64",
+                image="pydev:base",
+                build=dict(dockerfile_inline="FROM python:3.9", dump=dict(enable=True)),
+            )
+        )
+        mock_prev_stored_img = MagicMock()
+        parent_stored = MagicMock(
+            exists=MagicMock(return_value=True),
+            glob=MagicMock(return_value=[mock_prev_stored_img]),
+        )
+        store_path_mock = MagicMock(
+            exists=MagicMock(return_value=False),
+            __str__=MagicMock(return_value="/path/to/dumped/image.tar"),
+        )
+        store_path_mock.parent = parent_stored
+        dockerfile_store.return_value = store_path_mock
+
+        shell_mock_side_effects = [
+            dict(returncode=1),  # docker image inspect for pydev:base
+            dict(returncode=0),  # docker build pydev:base
+            dict(returncode=0),  # docker image pydev:base --output target.tar
+        ]
+
+        # conducting 2 scenarios: delete previous dumped image and vice versa
+        with tempfile.TemporaryDirectory() as td:
+            docker_file_temp = os.path.join(td, "dockerfile")
+            with mock.patch.multiple(
+                tempfile,
+                mkdtemp=mock.Mock(return_value="/tmp/dst"),
+                mktemp=mock.Mock(return_value=docker_file_temp),
+            ):
+                expected_executed_shell_cmds = [
+                    "docker image inspect pydev:base",
+                    f"docker build -t pydev:base -f {docker_file_temp} --platform=linux/amd64 /tmp/dst",
+                    "docker image save pydev:base --output /path/to/dumped/image.tar",
+                ]
+
+                # scenario: use the same file pattern
+                with mock_shell_exec(side_effects=shell_mock_side_effects) as rs:
+                    o = self.obj(cfg=cfg)
+                    o.ensure_custom_image()
+
+                    parent_stored.glob.assert_called_once_with("pydev:base*.tar")
+                    mock_prev_stored_img.unlink.assert_called_once()
+                    self.assertListEqual(
+                        extract_first_call_arg_list(m=rs), expected_executed_shell_cmds
+                    )
+
+                mock_prev_stored_img.reset_mock()
+
+                # scenario: use different store file pattern
+                with mock_shell_exec(side_effects=shell_mock_side_effects) as rs:
+                    cfg.programs["pydev"].build.dump.store = "/use/the/custom/path.tar"
+                    o = self.obj(cfg=cfg)
+                    o.ensure_custom_image()
+
+                    mock_prev_stored_img.unlink.assert_not_called()
+                    self.assertListEqual(
+                        extract_first_call_arg_list(m=rs), expected_executed_shell_cmds
+                    )
+
+    @mock.patch.dict(os.environ, dict(HOME="/home/sweet_home"))
+    def test_custom_image_dockerfile_store(self) -> None:
+        cfg = sample_cfg_program_dependent_images()
+        img = "custom_pydev_base"
+        o = self.obj(cfg=cfg)
+
+        with tempfile.NamedTemporaryFile(mode="w") as fh:
+            fh.write(cfg.images[img].dockerfile_inline)
+            fh.flush()
+
+            result = o.custom_image_dockerfile_store(
+                path=fh.name, image_name=img, build=cfg.images[img]
+            )
+            self.assertEqual(
+                result,
+                Path(
+                    "/home/sweet_home/"
+                    ".sandock_dump_images/"
+                    "custom_pydev_base:linux_amd64d31f0d4d7213bdb50291.tar"
+                ),
+            )
+
     def test_attach_container(self) -> None:
-        with mock.patch.object(subprocess, "run") as rs:
+        with mock_shell_exec() as rs:
             o = self.obj()
             self.assertFalse(
                 o.attach_container, msg="non persist program will not attach"
@@ -401,13 +522,9 @@ class SandboxExecTest(BaseTestCase):
 
             rs.assert_not_called()
 
-        with mock.patch.object(subprocess, "run") as rs:
-            rs.side_effect = [
-                CompletedProcess(
-                    returncode=1, args=[], stderr="Error: No such container: pydev"
-                ),
-            ]
-
+        with mock_shell_exec(
+            side_effects=[dict(returncode=1, stderr="Error: No such container: pydev")]
+        ) as rs:
             o = self.obj(program_kwargs=dict(persist=dict(enable=True), name="pydev"))
 
             self.assertFalse(
@@ -420,11 +537,9 @@ class SandboxExecTest(BaseTestCase):
                 "docker container inspect pydev",
             )
 
-        with mock.patch.object(subprocess, "run") as rs:
-            rs.side_effect = [
-                CompletedProcess(returncode=1, args=[], stderr="unexpected error"),
-            ]
-
+        with mock_shell_exec(
+            side_effects=[dict(returncode=1, stderr="unexpected error")]
+        ) as rs:
             o = self.obj(program_kwargs=dict(persist=dict(enable=True), name="pydev"))
 
             with self.assertRaisesRegex(
@@ -435,13 +550,9 @@ class SandboxExecTest(BaseTestCase):
 
     def test_attach_container_empy_info(self) -> None:
 
-        with mock.patch.object(subprocess, "run") as rs:
-            rs.side_effect = [
-                CompletedProcess(
-                    returncode=0, args=[], stdout="[]"
-                ),  # inspect container
-            ]
-
+        with mock_shell_exec(
+            side_effects=[dict(returncode=0, stdout="[]")]
+        ) as rs:  # inspect container
             o = self.obj(program_kwargs=dict(persist=dict(enable=True), name="pydev"))
 
             self.assertFalse(o.attach_container)
@@ -453,14 +564,13 @@ class SandboxExecTest(BaseTestCase):
 
     def test_attach_container_status_stop_auto_start(self) -> None:
 
-        with mock.patch.object(subprocess, "run") as rs:
-            rs.side_effect = [
-                CompletedProcess(
-                    returncode=0, args=[], stdout='[{"State": {"Status": "exited"}}]'
-                ),  # inspect container
-                CompletedProcess(returncode=0, args=[]),  # start the container
-            ]
-
+        side_effects = [
+            dict(
+                returncode=0, stdout='[{"State": {"Status": "exited"}}]'
+            ),  # inspect container
+            dict(returncode=0),  # start container
+        ]
+        with mock_shell_exec(side_effects=side_effects) as rs:
             o = self.obj(program_kwargs=dict(persist=dict(enable=True), name="pydev"))
 
             self.assertTrue(o.attach_container)
@@ -476,13 +586,11 @@ class SandboxExecTest(BaseTestCase):
             )
 
         # auto start disable
-        with mock.patch.object(subprocess, "run") as rs:
-            rs.side_effect = [
-                CompletedProcess(
-                    returncode=0, args=[], stdout='[{"State": {"Status": "exited"}}]'
-                ),  # inspect container
+        with mock_shell_exec(
+            side_effects=[
+                dict(returncode=0, stdout='[{"State": {"Status": "exited"}}]')
             ]
-
+        ) as rs:  # inspect container
             o = self.obj(
                 program_kwargs=dict(
                     persist=dict(enable=True, auto_start=False), name="pydev"
@@ -498,13 +606,11 @@ class SandboxExecTest(BaseTestCase):
 
     def test_attach_container_status_start(self) -> None:
 
-        with mock.patch.object(subprocess, "run") as rs:
-            rs.side_effect = [
-                CompletedProcess(
-                    returncode=0, args=[], stdout='[{"State": {"Status": "running"}}]'
-                ),  # inspect container
+        with mock_shell_exec(
+            side_effects=[
+                dict(returncode=0, stdout='[{"State": {"Status": "running"}}]')
             ]
-
+        ) as rs:  # inspect container
             o = self.obj(program_kwargs=dict(persist=dict(enable=True), name="pydev"))
 
             self.assertTrue(o.attach_container)
@@ -522,18 +628,18 @@ class SandboxExecTest(BaseTestCase):
 
     def test_do_docker_run(self) -> None:
 
-        with mock.patch.object(subprocess, "run") as rs:
+        side_effects = [
+            dict(returncode=0),  # pre cmd 1
+            dict(returncode=0),  # pre cmd 2
+            dict(returncode=0),  # docker run
+        ]
+        with mock_shell_exec(side_effects=side_effects) as rs:
             cfg = dummy_main_cfg(
                 program_kwargs=dict(
                     pre_exec_cmds=["whoami", "cd /tmp"],
                     volumes=["namevol:/mnt:ro", "cache_${VOL_DIR}:/cache"],
                 )
             )
-            rs.side_effect = [
-                CompletedProcess(returncode=0, args=[]),  # pre cmd 1
-                CompletedProcess(returncode=0, args=[]),  # pre cmd 2
-                CompletedProcess(returncode=0, args=[]),  # docker run
-            ]
 
             # mocks methods and properties
             with mock.patch.multiple(
@@ -570,7 +676,12 @@ class SandboxExecTest(BaseTestCase):
 
     def test_do_docker_exec(self) -> None:
 
-        with mock.patch.object(subprocess, "run") as rs:
+        side_effects = [
+            dict(returncode=0),  # pre cmd 1
+            dict(returncode=0),  # pre cmd 2
+            dict(returncode=0),  # docker run
+        ]
+        with mock_shell_exec(side_effects=side_effects) as rs:
             cfg = dummy_main_cfg(
                 program_kwargs=dict(
                     name="pydev",
@@ -578,11 +689,6 @@ class SandboxExecTest(BaseTestCase):
                     volumes=["namevol:/mnt:ro", "cache_${VOL_DIR}:/cache"],
                 )
             )
-            rs.side_effect = [
-                CompletedProcess(returncode=0, args=[]),  # pre cmd 1
-                CompletedProcess(returncode=0, args=[]),  # pre cmd 2
-                CompletedProcess(returncode=0, args=[]),  # docker exec
-            ]
 
             # mocks methods and properties
             with mock.patch.multiple(

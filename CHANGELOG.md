@@ -1,5 +1,14 @@
 # Change Log
 
+## [0.3.0]
+
+### Features and Enhancements
+
+- [config] add option in custom image build to dump it (default: off)
+- [img] save custom image as archive file if dump option enabled
+- [img] automatically remove the previous dumped image (default: on)
+
+
 ## [0.2.0]
 
 ### Features and Enhancements

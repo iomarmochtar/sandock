@@ -4,9 +4,11 @@ import tempfile
 import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+from pathlib import Path
 from .config import MainConfig
 from .config.program import Program
-from .shared import log, run_shell
+from .config.image import ImageBuild, DEFAULT_DUMP_IMAGE_STORE
+from .shared import log, run_shell, file_hash, ensure_home_dir_special_prefix
 from .exceptions import SandboxExecution
 
 VOL_LABEL_CREATED_BY = "created_by.sandock"
@@ -235,6 +237,26 @@ class SandboxExec(object):
         )
         run_shell(net_create_cmd, capture_output=False)
 
+    def custom_image_dockerfile_store(
+        self, path: str, image_name: str, build: ImageBuild
+    ) -> Path:
+        docker_file_hash = file_hash(fpath=path, max_chars=20)
+        return Path(
+            (
+                ensure_home_dir_special_prefix(path=build.dump.store)
+                .replace("${image}", image_name)
+                .replace("${hash}", docker_file_hash)
+                .replace(
+                    "${platform}",
+                    (
+                        ""
+                        if not self.program.platform
+                        else self.program.platform.replace("/", "_")
+                    ),
+                )
+            )
+        )
+
     def ensure_custom_image(self, image_name: Optional[str] = None) -> None:
         """
         if it's intended to use custom image
@@ -278,6 +300,18 @@ class SandboxExec(object):
                     ).replace("{CURRENT_UID}", str(self.current_uid))
                 )
 
+        # if dumped image enabled and found then just load from it and skip image building
+        dump_store_path = self.custom_image_dockerfile_store(
+            path=docker_file_path, image_name=image_name, build=build_image  # type: ignore[arg-type]
+        )
+        if build_image.dump.enable and dump_store_path.exists():
+            log.info(
+                f"[img] image dump is enable and cache image found, will restore the image from file `{dump_store_path}`"
+            )
+            image_restore_cmd = f"{self.docker_bin} image load -i {dump_store_path}"
+            run_shell(image_restore_cmd, capture_output=False)
+            return
+
         img_create_cmd = f"{self.docker_bin} build -t {image_name}"
         if docker_file_path:
             img_create_cmd += f" -f {docker_file_path}"
@@ -293,6 +327,31 @@ class SandboxExec(object):
 
         img_create_cmd += f" {working_dir}"
         run_shell(img_create_cmd, capture_output=False)
+
+        # dump image if it's enabled
+        if build_image.dump.enable and not dump_store_path.exists():
+            # clean up previous one
+            if dump_store_path.parent.exists() and build_image.dump.cleanup_prev:
+                log.info("[img] cleanup previous dumped image")
+                base_store = os.path.basename(build_image.dump.store)
+
+                # if using other than known format then just ignore it
+                if base_store == os.path.basename(DEFAULT_DUMP_IMAGE_STORE):
+                    for prev_img in dump_store_path.parent.glob(f"{image_name}*.tar"):
+                        log.info(f"[img] cleanup previous cached image {prev_img}")
+                        prev_img.unlink()
+                else:
+                    log.warning(
+                        f"[img] it's using non standard pattern ({base_store}), cannot run cleanup operation"
+                    )
+
+            # ensure the parent directory is exists
+            dump_store_path.parent.mkdir(parents=True, exist_ok=True)
+            log.info(f"[img] save dumped image into {dump_store_path}")
+            image_dump_cmd = (
+                f"{self.docker_bin} image save {image_name} --output {dump_store_path}"
+            )
+            run_shell(image_dump_cmd, capture_output=False)
 
         # garbage collect
         if (
