@@ -4,7 +4,7 @@ import tempfile
 from inspect import cleandoc
 from pathlib import Path
 from unittest import mock
-from unittest.mock import MagicMock, PropertyMock
+from unittest.mock import MagicMock
 from sandock.exceptions import SandboxExecution
 from sandock.sandbox import SandboxExec
 from sandock.config import MainConfig
@@ -345,6 +345,37 @@ class SandboxExecTest(BaseTestCase):
             self.assertEqual(rs.call_count, 1)
             self.assertEqual(
                 rs.call_args_list[0].args[0], "docker image inspect custom_pydev"
+            )
+
+    @mock.patch.dict(os.environ, dict(HOME="/home/user1"))
+    @mock.patch.object(SandboxExec, "custom_image_dockerfile_store")
+    def test_ensure_custom_image_escape_homedir(self, dockerfile_store: MagicMock) -> None:
+        """
+        escape home dir alias for dockerFile and context
+        """
+        cfg = dummy_main_cfg(
+            program_kwargs=dict(
+                image="pydev:base",
+                build=dict(
+                    dockerFile="${HOME}/path/to/Dockerfile",
+                    context="${HOME}/path/to"
+                    ),
+            )
+        )
+        shell_mock_side_effects = [
+            dict(returncode=1),  # docker image inspect for pydev:base
+            dict(returncode=0),  # docker image build for pydev:base 
+        ]
+        with mock_shell_exec(side_effects=shell_mock_side_effects) as rs:
+            o = self.obj(cfg=cfg)
+            o.ensure_custom_image()
+
+            self.assertListEqual(
+                extract_first_call_arg_list(m=rs),
+                [
+                    "docker image inspect pydev:base",
+                    "docker build -t pydev:base -f /home/user1/path/to/Dockerfile /home/user1/path/to",
+                ],
             )
 
     def test_ensure_custom_image_auto_create(self) -> None:

@@ -286,6 +286,8 @@ class SandboxExec(object):
             # if context not set then create the temporary one
             log.debug("[img] context was not set, create the temporary dir")
             working_dir = tempfile.mkdtemp()
+        else:
+            working_dir = ensure_home_dir_special_prefix(path=working_dir)
 
         docker_file_path = build_image.dockerFile
         if not docker_file_path and build_image.dockerfile_inline:
@@ -300,9 +302,11 @@ class SandboxExec(object):
                     ).replace("{CURRENT_UID}", str(self.current_uid))
                 )
 
+        docker_file_path = ensure_home_dir_special_prefix(path=docker_file_path)  # type: ignore[arg-type]
+
         # if dumped image enabled and found then just load from it and skip image building
         dump_store_path = self.custom_image_dockerfile_store(
-            path=docker_file_path, image_name=image_name, build=build_image  # type: ignore[arg-type]
+            path=docker_file_path, image_name=image_name, build=build_image
         )
         if build_image.dump.enable and dump_store_path.exists():
             log.info(

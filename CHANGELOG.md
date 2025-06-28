@@ -1,5 +1,11 @@
 # Change Log
 
+## [0.4.0]
+
+### Features and Enhancements
+
+- [img] escape home directory alias for `dockerFile` and `context`
+
 ## [0.3.0]
 
 ### Features and Enhancements
