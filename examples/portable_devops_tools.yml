@@ -1,0 +1,78 @@
+backup:
+  volume_labels: &backup-vol
+    sandock_backup: "true"
+
+volumes:
+  ssh_config:
+    labels:
+      <<: *backup-vol
+  gcloud_config:
+    labels:
+      <<: *backup-vol
+
+programs:
+  devopsh:
+    image: portable-devopsh
+    env:
+      HISTFILE: /root/.lokal/bash_history
+    extra_run_args:
+      - "--privileged"
+    build:
+      dockerfile_inline: |
+        FROM ubuntu:22.04
+
+        COPY --from=docker:28.1-cli /usr/local/bin/docker /usr/local/bin/
+
+        ENV PATH=$PATH:/root/.local/bin:/root/.local/share/mise/shims
+        RUN apt update && apt install -y vim ca-certificates curl unzip openssh-client
+        RUN curl https://mise.run | sh
+        RUN echo 'eval "$(/root/.local/bin/mise activate bash)"' >> /root/.bashrc && mkdir -p /root/.config/mise
+        RUN cat <<EOF > /root/.config/mise/config.toml
+        [tools]
+        python = "3.11"
+        go = "1.23"
+        jq = "latest"
+        packer = "1.9.4"
+        task = "latest"
+        terraform = "1.11.4"
+        terraform-docs = "latest"
+        tflint = "latest"
+        ansible = "11.3.0"
+        uv = "latest"
+        pipx = "latest"
+        vendir = "latest"
+        EOF
+        # gcloud required python installed first
+        RUN <<EOF
+          mise activate bash
+          mise install
+          mise use --global gcloud@529.0.0
+        EOF
+
+        # install molecule devs
+        RUN cat <<EOF > /tmp/requirements_dev.txt
+        pytest-testinfra==10.2.2
+        molecule==25.4.0
+        molecule-plugins[docker]==23.7.0
+        ansible-lint==25.5.0
+        docsible==0.7.22
+        molecule-plugins[gce]==23.7.0
+        EOF
+
+        RUN pip3 install -r /tmp/requirements_dev.txt
+
+        # go tools
+        RUN go install \
+          github.com/suzuki-shunsuke/tfcmt/v4/cmd/tfcmt@latest
+    hostname: infra-hub
+    exec: /bin/bash
+    aliases:
+      gcloud: gcloud 
+      ansible: ansible
+      tf: terraform
+      task: task
+      packer: task
+    volumes:
+      - gcloud_config:/root/.config/gcloud
+      - ssh_config:/root/.ssh
+      - /var/run/docker.sock:/var/run/docker.sock
