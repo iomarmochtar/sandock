@@ -307,6 +307,9 @@ class CmdRun(BaseCommand):
 
     @property
     def overrides_args(self) -> ArgumentParser:
+        """
+        list of injected additional parameters for running docker run args
+        """
         oparser = ArgumentParser(description="overriding parameters")
 
         oparser.add_argument(
@@ -337,6 +340,12 @@ class CmdRun(BaseCommand):
             action="append",
             type=parse_arg_key_value,
             help="set environment in KEY=VALUE format",
+        )
+
+        oparser.add_argument(
+            self.override_arg(name="ports"),
+            action="append",
+            help="publish container ports",
         )
 
         oparser.add_argument(

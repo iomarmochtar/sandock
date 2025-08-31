@@ -1,5 +1,12 @@
 # Change Log
 
+## [0.5.0]
+
+### Features and Enhancements
+
+- [cli] add overrides for container ports publishing
+- [dev] migrate gnu-make to go-task
+
 ## [0.4.0]
 
 ### Features and Enhancements

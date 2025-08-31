@@ -27,6 +27,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
@@ -47,11 +53,11 @@ jobs:
           key: venv-sndk-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
 
       - name: Install dependencies
-        run: make install-dev
+        run: task install-dev
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
 
       - name: Run tests and generate coverage report
-        run: make test-all
+        run: task test-all
 
       - name: Upload coverage reports to Codecov
         if: github.ref == 'refs/heads/main'
