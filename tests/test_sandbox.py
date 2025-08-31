@@ -349,7 +349,9 @@ class SandboxExecTest(BaseTestCase):
 
     @mock.patch.dict(os.environ, dict(HOME="/home/user1"))
     @mock.patch.object(SandboxExec, "custom_image_dockerfile_store")
-    def test_ensure_custom_image_escape_homedir(self, dockerfile_store: MagicMock) -> None:
+    def test_ensure_custom_image_escape_homedir(
+        self, dockerfile_store: MagicMock
+    ) -> None:
         """
         escape home dir alias for dockerFile and context
         """
@@ -357,14 +359,13 @@ class SandboxExecTest(BaseTestCase):
             program_kwargs=dict(
                 image="pydev:base",
                 build=dict(
-                    dockerFile="${HOME}/path/to/Dockerfile",
-                    context="${HOME}/path/to"
-                    ),
+                    dockerFile="${HOME}/path/to/Dockerfile", context="${HOME}/path/to"
+                ),
             )
         )
         shell_mock_side_effects = [
             dict(returncode=1),  # docker image inspect for pydev:base
-            dict(returncode=0),  # docker image build for pydev:base 
+            dict(returncode=0),  # docker image build for pydev:base
         ]
         with mock_shell_exec(side_effects=shell_mock_side_effects) as rs:
             o = self.obj(cfg=cfg)

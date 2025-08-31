@@ -175,7 +175,11 @@ class CmdRunTest(SkeltonCmdTest):
         remote = MagicMock()
         sandbox_exec_mock.return_value = remote
 
-        provided_args = ["--sandbox-arg-hostname=change_host", "--version"]
+        provided_args = [
+            "--sandbox-arg-hostname=change_host",
+            "--sandbox-arg-ports=8080:8080",
+            "--sandbox-arg-ports=8081:8081",
+            "--version"]
         with self.obj(
             args=Namespace(program="pydev", program_args=provided_args),
         ) as o:
@@ -183,7 +187,10 @@ class CmdRunTest(SkeltonCmdTest):
 
             self.assertDictEqual(
                 sandbox_exec_mock.call_args[1]["overrides"],
-                dict(hostname="change_host", allow_home_dir=False),
+                dict(
+                    hostname="change_host",
+                    allow_home_dir=False,
+                    ports=["8080:8080", "8081:8081"]),
             )
             remote.do.assert_called_once()
             self.assertListEqual(

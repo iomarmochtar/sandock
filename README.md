@@ -407,7 +407,7 @@ sample backup-restore workflows:
 
 ### Requirements
 
-- [GNU Make](https://www.gnu.org/software/make/)
+- [Task](https://taskfile.dev)
 - [Poetry](https://python-poetry.org/docs/#installation)
 
 ### Dev Dependencies
@@ -423,10 +423,12 @@ poetry install --with=dev
 
 ### Shortcuts
 
-- `make test`, run unit test.
-- `make tidy`, make code tidier using [black](https://github.com/psf/black). you might execute this before running style check linter.
-- `make lint`, run style and type check.
-- `make test-all`, combine unit test and style+type check.
+- `task test`, run unit test.
+- `task tidy`, make code tidier using [black](https://github.com/psf/black). you might execute this before running style check linter.
+- `task lint`, run style and type check.
+- `task test-all`, combine unit test and style+type check.
+
+to list the others `task --list-all`
 
 ## 💪🏻 Contributing
 

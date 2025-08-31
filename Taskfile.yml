@@ -1,0 +1,46 @@
+version: '3'
+
+tasks:
+  poetry:
+    internal: true
+    requires:
+      vars: [ARGS]
+    vars:
+      SUB_CMD: '{{.SUB_CMD | default "run"}}'
+    cmds:
+      - 'poetry {{.SUB_CMD}} {{.ARGS}}'
+
+  install-dev:
+    cmds:
+      - task: poetry
+        vars: 
+          SUB_CMD: install
+          ARGS: --with=dev
+
+  test:
+    cmds:
+      - for:
+          - run --source=sandock -m unittest discover -s tests
+          - report
+          - html
+          - xml
+        task: poetry
+        vars: {ARGS: 'coverage {{.ITEM}}'}
+    
+  tidy:
+    cmds:
+      - task: poetry
+        vars: {ARGS: black sandock tests}
+  
+  lint:
+    cmds:
+      - for:
+          - mypy .
+          - flake8 sandock
+        task: poetry
+        vars: {ARGS: '{{.ITEM}}'}
+  
+  test-all:
+    cmds:
+      - task: test
+      - task: lint

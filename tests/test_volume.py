@@ -73,12 +73,14 @@ class TestVolumeManager(TestCase):
                 mock_sh.call_args_list[0].args[0],
                 "docker volume ls --format=json --filter=label=label1='ok' --filter=label=label2='ok'",
             )
-    
+
     @patch.object(VolumeMgr, "volume_list")
     def test_created_by_sandock(self, mock_volume_list: MagicMock) -> None:
         o = self.obj()
         o.created_by_sandock
-        mock_volume_list.assert_called_once_with(label_filters={"created_by.sandock": "true"})
+        mock_volume_list.assert_called_once_with(
+            label_filters={"created_by.sandock": "true"}
+        )
 
     def test_vol_exists(self) -> None:
         o = self.obj()
