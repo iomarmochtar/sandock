@@ -12,17 +12,17 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c # v4.9.1
         with:
           python-version: '3.9'
 
       - name: Install poetry
-        uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a
+        uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a #v1.4.1
         with:
           version: 2.1.2
           virtualenvs-create: true

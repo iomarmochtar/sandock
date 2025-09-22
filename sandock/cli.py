@@ -349,6 +349,13 @@ class CmdRun(BaseCommand):
         )
 
         oparser.add_argument(
+            self.override_arg(name="recreate-img"),
+            action="store_true",
+            default=False,
+            help="recreate the used container image",
+        )
+
+        oparser.add_argument(
             self.override_arg(name="help"),
             action="store_true",
             default=False,

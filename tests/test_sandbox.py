@@ -688,7 +688,7 @@ class SandboxExecTest(BaseTestCase):
                 ),
             ):
 
-                o = self.obj(cfg=cfg)
+                o = self.obj(cfg=cfg, overrides=dict(recreate_img=False))
                 o.do(args=["--version"])
 
                 self.assertEqual(o.ensure_custom_image.call_count, 1)
@@ -703,6 +703,58 @@ class SandboxExecTest(BaseTestCase):
                 self.assertEqual(rs.call_args_list[1].args[0], "cd /tmp")
                 self.assertEqual(
                     rs.call_args_list[2].args[0],
+                    "docker run bla bla --version",
+                )
+
+    def test_do_hook_recreate_img(self) -> None:
+        """
+        run recreate image as the first execute on pre-exec
+        """
+        shell_side_effects = [
+            dict(returncode=0),  # pre cmd from deleting image
+            dict(returncode=0),  # pre cmd 1
+            dict(returncode=0),  # pre cmd 2
+            dict(returncode=0),  # docker run
+        ]
+        with mock_shell_exec(side_effects=shell_side_effects) as rs:
+            cfg = dummy_main_cfg(
+                program_kwargs=dict(
+                    name="pydev",
+                    image="custom_python3",
+                    pre_exec_cmds=["whoami", "cd /tmp"],
+                    volumes=["namevol:/mnt:ro", "cache_${VOL_DIR}:/cache"],
+                )
+            )
+
+            # mocks methods and properties
+            with mock.patch.multiple(
+                SandboxExec,
+                current_dir="/path/to/repo",
+                ensure_custom_image=mock.MagicMock(),
+                ensure_network=mock.MagicMock(),
+                ensure_volume=mock.MagicMock(),
+                exec_container_cmd=mock.MagicMock(),
+                run_container_cmd=mock.MagicMock(
+                    return_value=["docker", "run", "bla", "bla"]
+                ),
+            ):
+
+                o = self.obj(cfg=cfg, overrides=dict(recreate_img=True))
+                o.do(args=["--version"])
+
+                self.assertEqual(o.ensure_custom_image.call_count, 1)
+                self.assertEqual(o.ensure_network.call_count, 1)
+                self.assertEqual(o.ensure_volume.call_count, 2)
+                self.assertEqual(o.exec_container_cmd.call_count, 0)
+
+                # only for the shell command under "do" methods
+                rs.assert_called()
+                self.assertEqual(rs.call_count, 4)
+                self.assertEqual(rs.call_args_list[0].args[0], "docker image rm custom_python3")
+                self.assertEqual(rs.call_args_list[1].args[0], "whoami")
+                self.assertEqual(rs.call_args_list[2].args[0], "cd /tmp")
+                self.assertEqual(
+                    rs.call_args_list[3].args[0],
                     "docker run bla bla --version",
                 )
 
@@ -753,7 +805,6 @@ class SandboxExecTest(BaseTestCase):
                     rs.call_args_list[2].args[0],
                     "docker exec bla bla --version",
                 )
-
 
 if __name__ == "__main__":
     unittest.main()
