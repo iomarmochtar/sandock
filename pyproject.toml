@@ -46,5 +46,5 @@ show_column_numbers = true
 
 [tool.flake8]
 max-line-length = 88
-extend-ignore = ["E501"]
+extend-ignore = ["E501", "E252"]
 exclude = ["build", "dist", "__pycache__"]
