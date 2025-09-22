@@ -4,7 +4,7 @@
 
 ### Features and Enhancements
 
-- [cli] introduce `--sandock-arg-recreate-img` to rebuild container image 
+- [cli] introduce `--sandbox-arg-recreate-img` to rebuild container image 
 
 
 ## [0.5.0]
