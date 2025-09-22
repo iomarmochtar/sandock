@@ -190,6 +190,7 @@ class CmdRunTest(SkeltonCmdTest):
                 dict(
                     hostname="change_host",
                     allow_home_dir=False,
+                    recreate_img=False,
                     ports=["8080:8080", "8081:8081"]),
             )
             remote.do.assert_called_once()
@@ -204,11 +205,15 @@ class CmdRunTest(SkeltonCmdTest):
             args=Namespace(program="pydev"),
         ) as o:
             result = o.override_properties(
-                args=["--sandbox-arg-env=DEBUG=true", "--sandbox-arg-env=APP_ENV=dev"]
+                args=[
+                    "--sandbox-arg-env=DEBUG=true",
+                    "--sandbox-arg-env=APP_ENV=dev",
+                    "--sandbox-arg-recreate-img",
+                    ]
             )
 
             expected_env = dict(DEBUG="true", APP_ENV="dev")
-            ov_props = dict(allow_home_dir=False, env=expected_env)
+            ov_props = dict(allow_home_dir=False, recreate_img=True, env=expected_env)
             self.assertDictEqual(result, ov_props)
 
         with self.obj(

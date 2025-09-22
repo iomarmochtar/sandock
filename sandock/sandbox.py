@@ -40,8 +40,16 @@ class SandboxExec(object):
             raise SandboxExecution("name of persist program cannot be overrided")
 
         # apply program's attribute overrides
+        hooks = []
         for k, v in overrides.items():
             if not hasattr(program, k):
+                # it might be an internal/hook method
+                method = f"hook_{k}"
+                if hasattr(self, method):
+                    log.debug(f"hook detected for method {method}")
+                    hooks.append((getattr(self, method), v))
+                    continue
+
                 log.warning(f"program doesn't has property {k}")
                 continue
 
@@ -60,6 +68,21 @@ class SandboxExec(object):
             )
 
         self.container_name = self.generate_container_name()
+        # run hooks if any
+        for method, arg in hooks:
+            method(arg)
+
+    def hook_recreate_img(self, create: bool=False) -> None:
+        """
+        register for pre-exec cmd to delete image run the related container
+        """
+        if not create:
+            return
+
+        log.debug("[hook] registring for image deletion: {self.program.image}")
+        self.program.pre_exec_cmds.insert(0, " ".join([
+            self.docker_bin, "image", "rm", self.program.image
+        ]))
 
     @property
     def docker_bin(self) -> str:

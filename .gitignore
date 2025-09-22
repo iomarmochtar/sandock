@@ -8,3 +8,4 @@ dist
 htmlcov
 .mypy_cache
 coverage.xml
+.DS_STORE
