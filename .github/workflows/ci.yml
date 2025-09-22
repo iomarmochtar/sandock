@@ -23,23 +23,23 @@ jobs:
         # TODO: the list might be added for future test uses
         python-version: ["3.9"]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
           persist-credentials: false
 
       - name: Install Task
-        uses: arduino/setup-task@v2
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c # v4.9.1
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Install poetry
-        uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a
+        uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a #v1.4.1
         with:
           version: 2.1.2
           virtualenvs-create: true
@@ -47,7 +47,7 @@ jobs:
 
       - name: Load cached venv
         id: cached-poetry-dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@2f8e54208210a422b2efd51efaa6bd6d7ca8920f # v3.4.3
         with:
           path: .venv
           key: venv-sndk-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
@@ -61,7 +61,7 @@ jobs:
 
       - name: Upload coverage reports to Codecov
         if: github.ref == 'refs/heads/main'
-        uses: codecov/codecov-action@ad3126e916f78f00edff4ed0317cf185271ccc2d
+        uses: codecov/codecov-action@ad3126e916f78f00edff4ed0317cf185271ccc2d #v5.5.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: iomarmochtar/sandock
