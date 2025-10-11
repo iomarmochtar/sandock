@@ -9,6 +9,7 @@ from typing import Any, Union, Dict, List, Optional
 KV = Dict[str, Any]
 CONFIG_PATH_ENV = "SNDK_CFG"
 SANDBOX_DEBUG_ENV = "SNDK_DEBUG"
+FETCH_PROP_ENABLE_ENV = "SNDK_FETCH_PROP"
 
 
 class LogColorFormatter(logging.Formatter):
@@ -67,7 +68,8 @@ def run_shell(  # type: ignore[no-untyped-def]
         | cmd_args
     )
     if isinstance(command, list):
-        command = " ".join(command)
+        # filter for empty elem, this might from the result of inline if-else
+        command = " ".join([x for x in command if x])
 
     log.debug(f"shell cmd: {command}, check_err: {check_err}, cmd_args: {cmd_args}")
     call_cmd = subprocess.run(command, **cmd_args)
@@ -82,6 +84,19 @@ def run_shell(  # type: ignore[no-untyped-def]
             returncode=call_cmd.returncode,
         )
     return call_cmd
+
+
+def list_remove_element(source: List[str], elem: str) -> List[str]:
+    """
+    remove the related member and the next to it
+    """
+    # return as is if not found
+    try:
+        elem_idx = source.index(elem)
+    except ValueError:
+        return source
+
+    return source[:elem_idx] + source[elem_idx+2:]
 
 
 def dict_merge(dict1: KV, dict2: KV) -> KV:
@@ -117,3 +132,44 @@ def file_hash(fpath: str, max_chars: Optional[int] = None) -> str:
         hex_digest = sha256(fh.read().encode("utf-8")).hexdigest()
 
         return hex_digest[:max_chars] if max_chars is not None else hex_digest
+
+
+def flatten_list(items: List[Any]) -> List[Any]:
+    """
+    Recursively flatten a nested list into a single list.
+    """
+    result = []
+    for item in items:
+        if isinstance(item, list):
+            result.extend(flatten_list(item))
+        else:
+            result.append(item)
+    return result
+
+
+def fetch_prop(path: str, obj: Union[object, List[Any], KV], separator: str=".") -> Any:
+    """
+    Fetch a nested property from an object or dictionary using the given separator char.
+    Supports dicts, lists, and normal Python objects.
+    """
+    keys = path.split(separator)
+    current = obj
+
+    for key in keys:
+        if isinstance(current, dict):
+            if key not in current:
+                raise KeyError(f"Key `{key}` not found in dict at `{path}`")
+            current = current[key]
+        elif isinstance(current, list):
+            try:
+                index = int(key)
+                current = current[index]
+            except (ValueError, IndexError):
+                raise KeyError(f"Invalid list index `{key}` in path `{path}`")
+        else:
+            # Handle Python object
+            if not hasattr(current, key):
+                raise KeyError(f"Attribute `{key}` not found in object at `{path}`")
+            current = getattr(current, key)
+
+    return current

@@ -43,6 +43,7 @@ class Program(object):
     interactive: bool = True
     allow_home_dir: bool = False
     name: Optional[str] = None
+    executor: Optional[str] = None
     network: Optional[str] = None
     hostname: Optional[str] = None
     build: Optional[ImageBuild] = None

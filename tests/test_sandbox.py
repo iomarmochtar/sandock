@@ -43,29 +43,24 @@ def sample_cfg_program_dependent_images() -> MainConfig:
 
 
 class SandboxExecTest(BaseTestCase):
+    default_executor: str = "docker"
+    exec_cls: object = SandboxExec
+
     def obj(self, program_kwargs: dict = {}, **kwargs) -> SandboxExec:
         """
         automatically inject default values
         """
+        cfg = kwargs.get("cfg", dummy_main_cfg(program_kwargs=program_kwargs))
         kwargs = (
-            dict(name="pydev", cfg=dummy_main_cfg(program_kwargs=program_kwargs))
+            dict(name="pydev", program=cfg.programs["pydev"], cfg=cfg)
             | kwargs
         )
 
-        return SandboxExec(**kwargs)
+        return self.exec_cls(**kwargs)
 
+    # TODO: move this to cli test
+    # TODO: [x] keep to validate directory execution check
     def test_init_validations(self) -> None:
-        with self.assertRaisesRegex(SandboxExecution, "`ruby33` is not defined"):
-            self.obj(name="ruby33")
-
-        with self.assertRaisesRegex(
-            SandboxExecution, "name of persist program cannot be overrided"
-        ):
-            self.obj(
-                cfg=dummy_main_cfg(program_kwargs=dict(persist=dict(enable=True))),
-                overrides=dict(name="pydev_ov"),
-            )
-
         with self.assertRaisesRegex(
             SandboxExecution,
             "cannot be ran on top of home directory when the program's sandbox mount is enabled",
@@ -75,14 +70,6 @@ class SandboxExecTest(BaseTestCase):
                 SandboxExec, current_dir="/home/dir", home_dir="/home/dir"
             ):
                 self.obj()
-
-    def test_init_overrides(self) -> None:
-        o = self.obj(
-            overrides=dict(exec="/bin/bash", no_prop="not_found", name="conda")
-        )
-
-        self.assertEqual(o.program.exec, "/bin/bash")
-        self.assertEqual(o.program.name, "conda")
 
     def test_generate_container_name(self) -> None:
         with mock.patch.object(SandboxExec, "current_timestamp", "123.456"):
@@ -121,11 +108,10 @@ class SandboxExecTest(BaseTestCase):
             current_timestamp="123.456",
         ):
             o = self.obj()
-
             self.assertListEqual(
                 o.run_container_cmd(),
                 [
-                    "docker",
+                    self.default_executor,
                     "run",
                     "--entrypoint",
                     "python3",
@@ -140,6 +126,45 @@ class SandboxExecTest(BaseTestCase):
                     "python:3.11",
                 ],
             )
+
+    def test_run_container_cmd_set_executor(self) -> None:
+        with mock.patch.multiple(
+            SandboxExec,
+            current_dir="/path/to/repo",
+            home_dir="/home/dir",
+            current_timestamp="123.456",
+        ):
+            cfg = dummy_main_cfg(
+                program_kwargs={"executor": "podman_latest"},
+                executors={"podman_latest": {"bin_path": "/opt/podman_latest/bin/podman"}}
+            )
+            o = self.obj(cfg=cfg)
+
+            self.assertListEqual(
+                o.run_container_cmd(),
+                [
+                    "/opt/podman_latest/bin/podman",
+                    "run",
+                    "--entrypoint",
+                    "python3",
+                    "--name",
+                    "sandock-pydev-123.456",
+                    "--rm",
+                    "-it",
+                    "-v",
+                    "/path/to/repo:/sandbox",
+                    "--workdir",
+                    "/sandbox",
+                    "python:3.11",
+                ],
+            )
+
+    def test_docker_bin_executor_not_defined(self) -> None:
+        cfg = dummy_main_cfg(
+            program_kwargs={"executor": "podman_latest"},
+        )
+        with self.assertRaisesRegex(SandboxExecution, "Executor `podman_latest` is not defined"):
+            self.obj(cfg=cfg).docker_bin
 
     def test_run_container_cmd_extended(self) -> None:
         cfg = dummy_main_cfg(
@@ -169,7 +194,7 @@ class SandboxExecTest(BaseTestCase):
             current_uid=1000,
             current_gid=1000,
         ):
-            o = self.obj(cfg=cfg, overrides=dict(exec="sh"))
+            o = self.obj(cfg=cfg)
 
             self.assertListEqual(
                 o.run_container_cmd(),
@@ -177,7 +202,7 @@ class SandboxExecTest(BaseTestCase):
                     "podman",
                     "run",
                     "--entrypoint",
-                    "/bin/bash",
+                    "python3",
                     "--name",
                     "mypydev",
                     "-it",
@@ -229,7 +254,7 @@ class SandboxExecTest(BaseTestCase):
             rs.assert_called()
             self.assertEqual(rs.call_count, 1)
             self.assertEqual(
-                rs.call_args_list[0].args[0], "docker volume inspect myhome"
+                rs.call_args_list[0].args[0], f"{self.default_executor} volume inspect myhome"
             )
 
     def test_ensure_volume_auto_create(self) -> None:
@@ -237,7 +262,11 @@ class SandboxExecTest(BaseTestCase):
         mentioned but it's not exist, then auto create it
         """
         cfg = dummy_main_cfg(
-            volumes=dict(myhome=dict(labels={"backup.container.mochtar.net": "true"})),
+            volumes=dict(myhome=dict(
+                driver="local",
+                driver_opts={"device": "tmpfs"},
+                labels={"backup.container.mochtar.net": "true"})
+                ),
         )
 
         side_effects = [
@@ -251,11 +280,11 @@ class SandboxExecTest(BaseTestCase):
             rs.assert_called()
             self.assertEqual(rs.call_count, 2)
             self.assertEqual(
-                rs.call_args_list[0].args[0], "docker volume inspect myhome"
+                rs.call_args_list[0].args[0], f"{self.default_executor} volume inspect myhome"
             )
             self.assertEqual(
                 rs.call_args_list[1].args[0],
-                "docker volume create --driver=local  --label backup.container.mochtar.net='true' --label created_by.sandock='true' myhome",
+                f"{self.default_executor} volume create --driver=local --opt device=tmpfs --label backup.container.mochtar.net='true' --label created_by.sandock='true' myhome",
             )
 
     def test_ensure_network_unmanaged(self) -> None:
@@ -294,7 +323,7 @@ class SandboxExecTest(BaseTestCase):
             rs.assert_called()
             self.assertEqual(rs.call_count, 1)
             self.assertEqual(
-                rs.call_args_list[0].args[0], "docker network inspect mynet"
+                rs.call_args_list[0].args[0], f"{self.default_executor} network inspect mynet"
             )
 
     def test_ensure_network_auto_create(self) -> None:
@@ -316,11 +345,11 @@ class SandboxExecTest(BaseTestCase):
             rs.assert_called()
             self.assertEqual(rs.call_count, 2)
             self.assertEqual(
-                rs.call_args_list[0].args[0], "docker network inspect mynet"
+                rs.call_args_list[0].args[0], f"{self.default_executor} network inspect mynet"
             )
             self.assertEqual(
                 rs.call_args_list[1].args[0],
-                "docker network create --driver=bridge  mynet",
+                f"{self.default_executor} network create --driver=bridge  mynet",
             )
 
     def test_ensure_custom_image_not_defined(self) -> None:
@@ -344,7 +373,7 @@ class SandboxExecTest(BaseTestCase):
             rs.assert_called()
             self.assertEqual(rs.call_count, 1)
             self.assertEqual(
-                rs.call_args_list[0].args[0], "docker image inspect custom_pydev"
+                rs.call_args_list[0].args[0], f"{self.default_executor} image inspect custom_pydev"
             )
 
     @mock.patch.dict(os.environ, dict(HOME="/home/user1"))
@@ -374,8 +403,8 @@ class SandboxExecTest(BaseTestCase):
             self.assertListEqual(
                 extract_first_call_arg_list(m=rs),
                 [
-                    "docker image inspect pydev:base",
-                    "docker build -t pydev:base -f /home/user1/path/to/Dockerfile /home/user1/path/to",
+                    f"{self.default_executor} image inspect pydev:base",
+                    f"{self.default_executor} build -t pydev:base -f /home/user1/path/to/Dockerfile /home/user1/path/to",
                 ],
             )
 
@@ -404,10 +433,10 @@ class SandboxExecTest(BaseTestCase):
                     self.assertListEqual(
                         extract_first_call_arg_list(m=rs),
                         [
-                            "docker image inspect custom_pydev_base",
-                            f'docker build -t custom_pydev_base -f {docker_file_temp} --build-arg USER="another" --platform=linux/amd64 /tmp/dst',
-                            "docker image inspect custom_pydev",
-                            f"docker build -t custom_pydev -f {docker_file_temp} --progress=quite --platform=linux/amd64 /tmp/dst",
+                            f"{self.default_executor} image inspect custom_pydev_base",
+                            f'{self.default_executor} build -t custom_pydev_base -f {docker_file_temp} --build-arg USER="another" --platform=linux/amd64 /tmp/dst',
+                            f"{self.default_executor} image inspect custom_pydev",
+                            f"{self.default_executor} build -t custom_pydev -f {docker_file_temp} --progress=quite --platform=linux/amd64 /tmp/dst",
                         ],
                     )
 
@@ -448,8 +477,8 @@ class SandboxExecTest(BaseTestCase):
                     self.assertListEqual(
                         extract_first_call_arg_list(m=rs),
                         [
-                            "docker image inspect pydev:base",
-                            "docker image load -i /path/to/dumped/image.tar",
+                            f"{self.default_executor} image inspect pydev:base",
+                            f"{self.default_executor} image load -i /path/to/dumped/image.tar",
                         ],
                     )
 
@@ -494,9 +523,9 @@ class SandboxExecTest(BaseTestCase):
                 mktemp=mock.Mock(return_value=docker_file_temp),
             ):
                 expected_executed_shell_cmds = [
-                    "docker image inspect pydev:base",
-                    f"docker build -t pydev:base -f {docker_file_temp} --platform=linux/amd64 /tmp/dst",
-                    "docker image save pydev:base --output /path/to/dumped/image.tar",
+                    f"{self.default_executor} image inspect pydev:base",
+                    f"{self.default_executor} build -t pydev:base -f {docker_file_temp} --platform=linux/amd64 /tmp/dst",
+                    f"{self.default_executor} image save pydev:base --output /path/to/dumped/image.tar",
                 ]
 
                 # scenario: use the same file pattern
@@ -566,7 +595,7 @@ class SandboxExecTest(BaseTestCase):
             self.assertEqual(rs.call_count, 1)
             self.assertEqual(
                 rs.call_args_list[0].args[0],
-                "docker container inspect pydev",
+                f"{self.default_executor} container inspect pydev",
             )
 
         with mock_shell_exec(
@@ -591,7 +620,7 @@ class SandboxExecTest(BaseTestCase):
             self.assertEqual(rs.call_count, 1)
             self.assertEqual(
                 rs.call_args_list[0].args[0],
-                "docker container inspect pydev",
+                f"{self.default_executor} container inspect pydev",
             )
 
     def test_attach_container_status_stop_auto_start(self) -> None:
@@ -609,12 +638,12 @@ class SandboxExecTest(BaseTestCase):
             self.assertEqual(rs.call_count, 2)
             self.assertEqual(
                 rs.call_args_list[0].args[0],
-                "docker container inspect pydev",
+                f"{self.default_executor} container inspect pydev",
             )
 
             self.assertEqual(
                 rs.call_args_list[1].args[0],
-                "docker container start pydev",
+                f"{self.default_executor} container start pydev",
             )
 
         # auto start disable
@@ -633,7 +662,7 @@ class SandboxExecTest(BaseTestCase):
             self.assertEqual(rs.call_count, 1)
             self.assertEqual(
                 rs.call_args_list[0].args[0],
-                "docker container inspect pydev",
+                f"{self.default_executor} container inspect pydev",
             )
 
     def test_attach_container_status_start(self) -> None:
@@ -655,7 +684,7 @@ class SandboxExecTest(BaseTestCase):
     def test_exec_container_cmd(self) -> None:
         self.assertListEqual(
             self.obj(program_kwargs=dict(name="pydev")).exec_container_cmd(),
-            ["docker", "exec", "-it", "pydev", "python3"],
+            [self.default_executor, "exec", "-it", "pydev", "python3"],
         )
 
     def test_do_docker_run(self) -> None:
@@ -688,7 +717,7 @@ class SandboxExecTest(BaseTestCase):
                 ),
             ):
 
-                o = self.obj(cfg=cfg, overrides=dict(recreate_img=False))
+                o = self.obj(cfg=cfg)
                 o.do(args=["--version"])
 
                 self.assertEqual(o.ensure_custom_image.call_count, 1)
@@ -708,7 +737,7 @@ class SandboxExecTest(BaseTestCase):
 
     def test_do_hook_recreate_img(self) -> None:
         """
-        run recreate image as the first execute on pre-exec
+        register hook for image removal before running container command
         """
         shell_side_effects = [
             dict(returncode=0),  # pre cmd from deleting image
@@ -735,11 +764,12 @@ class SandboxExecTest(BaseTestCase):
                 ensure_volume=mock.MagicMock(),
                 exec_container_cmd=mock.MagicMock(),
                 run_container_cmd=mock.MagicMock(
-                    return_value=["docker", "run", "bla", "bla"]
+                    return_value=[self.default_executor, "run", "bla", "bla"]
                 ),
             ):
 
-                o = self.obj(cfg=cfg, overrides=dict(recreate_img=True))
+                o = self.obj(cfg=cfg)
+                o.hook_recreate_img(execute=True)
                 o.do(args=["--version"])
 
                 self.assertEqual(o.ensure_custom_image.call_count, 1)
@@ -750,12 +780,12 @@ class SandboxExecTest(BaseTestCase):
                 # only for the shell command under "do" methods
                 rs.assert_called()
                 self.assertEqual(rs.call_count, 4)
-                self.assertEqual(rs.call_args_list[0].args[0], "docker image rm custom_python3")
+                self.assertEqual(rs.call_args_list[0].args[0], f"{self.default_executor} image rm custom_python3")
                 self.assertEqual(rs.call_args_list[1].args[0], "whoami")
                 self.assertEqual(rs.call_args_list[2].args[0], "cd /tmp")
                 self.assertEqual(
                     rs.call_args_list[3].args[0],
-                    "docker run bla bla --version",
+                    f"{self.default_executor} run bla bla --version",
                 )
 
     def test_do_docker_exec(self) -> None:
@@ -776,14 +806,14 @@ class SandboxExecTest(BaseTestCase):
 
             # mocks methods and properties
             with mock.patch.multiple(
-                SandboxExec,
+                self.exec_cls,
                 current_dir="/path/to/repo",
                 attach_container=True,
                 ensure_custom_image=mock.MagicMock(),
                 ensure_network=mock.MagicMock(),
                 ensure_volume=mock.MagicMock(),
                 exec_container_cmd=mock.MagicMock(
-                    return_value=["docker", "exec", "bla", "bla"]
+                    return_value=[self.default_executor, "exec", "bla", "bla"]
                 ),
                 run_container_cmd=mock.MagicMock(),
             ):
@@ -803,7 +833,7 @@ class SandboxExecTest(BaseTestCase):
                 self.assertEqual(rs.call_args_list[1].args[0], "cd /tmp")
                 self.assertEqual(
                     rs.call_args_list[2].args[0],
-                    "docker exec bla bla --version",
+                    f"{self.default_executor} exec bla bla --version",
                 )
 
 if __name__ == "__main__":

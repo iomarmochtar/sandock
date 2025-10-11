@@ -2,15 +2,24 @@ import os
 import sys
 import logging
 import subprocess
-from typing import List, Tuple, Dict, Any, Optional
+import importlib
+from typing import List, Tuple, Dict, Any, Optional, Type
 from argparse import ArgumentParser, Namespace, REMAINDER, ArgumentTypeError
 from importlib.metadata import metadata
 from .config import MainConfig, load_config_file, main_config_finder
-from .shared import log, SANDBOX_DEBUG_ENV, CONFIG_PATH_ENV, run_shell
+from .config.program import Program
+from .shared import log, SANDBOX_DEBUG_ENV, CONFIG_PATH_ENV, KV, run_shell
 from .sandbox import SandboxExec
 from .volume import VolumeMgr
 from .exceptions import SandboxBaseException, SandboxExecConfig, SandboxVolumeExec
 from ._version import __version__, __build_hash__
+
+
+def import_sandbox_dynamic_class(full_class_path: str) -> Type[SandboxExec]:
+    module_path, class_name = full_class_path.rsplit(".", 1)
+    module = importlib.import_module(module_path)
+
+    return getattr(module, class_name)  # type: ignore[no-any-return]
 
 
 def parse_arg_key_value(s: str) -> Tuple[str, str]:
@@ -304,6 +313,27 @@ class CmdVolume(BaseCommand):
 
 class CmdRun(BaseCommand):
     description = "run program"
+    program_cfg: Program
+
+    def __init__(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(*args, **kwargs)
+        program_cfg = self.config.programs.get(self.args.program)
+        if not program_cfg:
+            raise SandboxExecConfig(f"`{self.args.program}` is not defined")
+
+        self.program_cfg = program_cfg
+
+    @staticmethod
+    def register_arguments(parser: ArgumentParser) -> None:
+        parser.add_argument(
+            "program",
+        )
+
+        parser.add_argument(
+            "program_args",
+            nargs=REMAINDER,
+            help="arguments that will be forwarded, excluded for the override args",
+        )
 
     @property
     def overrides_args(self) -> ArgumentParser:
@@ -352,6 +382,7 @@ class CmdRun(BaseCommand):
             self.override_arg(name="recreate-img"),
             action="store_true",
             default=False,
+            dest="hook_recreate_img",
             help="recreate the used container image",
         )
 
@@ -363,18 +394,6 @@ class CmdRun(BaseCommand):
         )
 
         return oparser
-
-    @staticmethod
-    def register_arguments(parser: ArgumentParser) -> None:
-        parser.add_argument(
-            "program",
-        )
-
-        parser.add_argument(
-            "program_args",
-            nargs=REMAINDER,
-            help="arguments that will be forwarded, excluded for the override args",
-        )
 
     def override_properties(self, args: List[str]) -> Dict[str, Any]:
         """
@@ -401,13 +420,14 @@ class CmdRun(BaseCommand):
             result[arg_name] = v
         return result
 
-    @property
-    def remainder_args(self) -> Tuple[List[str], Dict[str, str]]:
+    def apply_overrides(self) -> Tuple[List[str], KV]:
         """
         capture argument that will be forwarded to program and read for sandbox-exec
         """
         program_args = []
+        hooks = {}
         snbx_args = []
+        overrides = {}
         for remainder in self.args.program_args:
             if remainder.startswith(self.override_arg()):
                 snbx_args.append(remainder)
@@ -415,12 +435,54 @@ class CmdRun(BaseCommand):
 
             program_args.append(remainder)
 
-        return (program_args, self.override_properties(args=snbx_args))
+        for k, v in self.override_properties(args=snbx_args).items():
+            if k.startswith("hook_"):
+                hooks[k] = v
+                continue
+
+            if hasattr(self.program_cfg, k):
+                log.debug(f"overriding value {v} in property {k}")
+                setattr(self.program_cfg, k, v)
+                overrides[k] = v
+                continue
+
+        # persist container cannot be renamed in preventing unexpected behaviour
+        # (eg: need gc the stopped one with different name)
+        if self.program_cfg.persist.enable and "name" in overrides:
+            raise SandboxExecConfig("name of persist program cannot be overrided")
+
+        return program_args, hooks
+
+    @property
+    def executor_cls(self) -> Type[SandboxExec]:
+        """
+        return sandbox class that will be use
+        """
+        program_exec = self.program_cfg.executor
+        if not program_exec:
+            return SandboxExec
+
+        executor = self.config.executors.get(program_exec)
+        if not executor:
+            raise SandboxExecConfig(f"unknown executor `{program_exec}` in {self.args.program}'s config")
+
+        if not executor.load_cls:
+            return SandboxExec
+
+        log.debug(f"using custom sandbox exec class ~> {executor.load_cls}")
+        return import_sandbox_dynamic_class(full_class_path=executor.load_cls)
 
     def main(self) -> None:
-        program_args, overrides = self.remainder_args
-        log.debug(f"overrides args ~> {overrides}")
-        snbx = SandboxExec(name=self.args.program, cfg=self.config, overrides=overrides)
+        # apply the program configuration overrides, the rest of it will be the arguments to
+        # container executeable
+        program_args, hooks = self.apply_overrides()
+
+        snbx = self.executor_cls(name=self.args.program, program=self.program_cfg, cfg=self.config)
+        # run hooks if any
+        for hook, v in hooks.items():
+            getattr(snbx, hook)(v)
+
+        # forward any arguments to the container executeable
         snbx.do(args=program_args)
 
 
@@ -434,7 +496,7 @@ def reraise_if_debug(e: Exception) -> None:
 
 def main(args: Optional[List[str]] = None) -> None:
     meta = metadata("sandock")
-    cmds = dict(list=CmdList, alias=CmdAlias, run=CmdRun, volume=CmdVolume)
+    cmds: Dict[str, Type[BaseCommand]] = dict(list=CmdList, alias=CmdAlias, run=CmdRun, volume=CmdVolume)
     parser = ArgumentParser(
         description="A wrapper in running command inside container sandboxed environment",
         epilog=f"Author: {meta['author']} <{meta['author-email']}>",

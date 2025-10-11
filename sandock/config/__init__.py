@@ -1,8 +1,9 @@
 import os
+import re
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from pathlib import Path
-from ..shared import dict_merge, log, KV, CONFIG_PATH_ENV
+from ..shared import dict_merge, log, fetch_prop, flatten_list, KV, CONFIG_PATH_ENV, FETCH_PROP_ENABLE_ENV
 from ..exceptions import SandboxExecConfig
 from .image import ImageBuild
 from .program import Program
@@ -10,10 +11,19 @@ from .config import Configuration
 from .backup import Backup
 from ._helpers import read_config, build_if_set, dot_config_finder
 
+DEFAULT_CUSTOM_EXECUTORS = dict(
+    apple_container=dict(
+        bin_path="container",
+        load_cls="sandock.executors.AppleContainerExec"
+    )
+)
+
+fetch_prop_re = re.compile(r"^fetch_prop\(([^)]+)\)$")
+
 
 @dataclass
 class Volume(object):
-    driver: str = "local"
+    driver: Optional[str] = None
     driver_opts: Dict[str, str] = field(default_factory=dict)
     labels: Dict[str, str] = field(default_factory=dict)
 
@@ -34,6 +44,16 @@ class Execution(object):
 
 
 @dataclass
+class Executor(object):
+    bin_path: Optional[str] = None
+    load_cls: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.bin_path is None and self.load_cls is None:
+            raise ValueError("one of `bin_path` or `load_cls` must be set on executor")
+
+
+@dataclass
 class MainConfig(object):
     execution: Execution = field(default_factory=Execution)
     config: Configuration = field(default_factory=Configuration)
@@ -42,6 +62,7 @@ class MainConfig(object):
     volumes: Dict[str, Volume] = field(default_factory=dict)
     images: Dict[str, ImageBuild] = field(default_factory=dict)
     networks: Dict[str, Network] = field(default_factory=dict)
+    executors: Dict[str, Executor] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         build_if_set(self, attr="config", cls=Configuration)
@@ -50,9 +71,11 @@ class MainConfig(object):
         build_if_set(self, attr="execution", cls=Execution)
         build_if_set(self, attr="backup", cls=Backup)
 
+        self.executors = dict_merge(self.executors, DEFAULT_CUSTOM_EXECUTORS)
         # configuration that use kv format if the value set as dict
         cls_mapper = dict(
-            programs=Program, volumes=Volume, networks=Network, images=ImageBuild
+            programs=Program, volumes=Volume, networks=Network, images=ImageBuild,
+            executors=Executor
         )
 
         for name, prop_cls in cls_mapper.items():
@@ -93,6 +116,43 @@ class MainConfig(object):
         # at least need to define one program
         if not self.programs:
             raise ValueError("no program configured")
+
+        if self.fetch_prop_enable:
+            self.resolve_fetch_prop(target=self)
+
+    @property
+    def fetch_prop_enable(self) -> bool:
+        return os.getenv(FETCH_PROP_ENABLE_ENV) == "yes"
+
+    def resolve_fetch_prop(self, target: Any=None) -> Any:
+        if isinstance(target, dict):
+            for k, v in target.items():
+                target[k] = self.resolve_fetch_prop(v)
+            return target
+
+        elif isinstance(target, list):
+            return [self.resolve_fetch_prop(i) for i in target]
+
+        elif isinstance(target, str):
+            match = fetch_prop_re.match(target.strip())
+            if match:
+                path = match.group(1).strip()
+                return fetch_prop(path=path, obj=self)
+            return target
+
+        elif hasattr(target, "__dict__"):
+            for attr, val in vars(target).items():
+                if not val:
+                    continue
+
+                val = self.resolve_fetch_prop(val)
+                if isinstance(val, list):
+                    val = flatten_list(items=val)
+
+                setattr(target, attr, val)
+            return target
+
+        return target
 
 
 def load_config_file(path: str) -> MainConfig:

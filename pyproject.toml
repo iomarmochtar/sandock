@@ -1,6 +1,6 @@
 [project]
 name = "sandock"
-version = "0.6.0"
+version = "0.7.0"
 description = "CLI tool for sandbox execution using container approach"
 authors = [{ name = "Imam Omar Mochtar", email = "iomarmochtar@gmail.com" }]
 license = { text = "MIT" }

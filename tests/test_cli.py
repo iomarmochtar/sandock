@@ -32,6 +32,8 @@ from sandock.cli import (
     CmdVolume,
     main as cli_main,
 )
+from sandock.sandbox import SandboxExec
+from sandock.executors import AppleContainerExec
 from sandock.volume import VolumeMgr, BackupSnapshot
 from helpers import mock_shell_exec
 
@@ -170,8 +172,86 @@ class CmdAliasTest(SkeltonCmdTest):
 class CmdRunTest(SkeltonCmdTest):
     cls = CmdRun
 
+    @contextmanager
+    def obj(self, ns_props: Optional[dict]={}, **kwargs) -> Iterator[CmdRun]:
+        kwargs.setdefault("args", Namespace(program="pydev", **ns_props))
+
+        with super().obj(**kwargs) as o:
+            yield o
+
+    def test_executor_cls_default(self) -> None:
+        with self.obj() as o:
+            self.assertEqual(o.executor_cls, SandboxExec)
+
+    def test_executor_cls_unknown_executor(self) -> None:
+        with self.obj(
+            cfg=dummy_main_cfg(program_kwargs={"executor": "special_exec"}),
+        ) as o:
+            with self.assertRaisesRegex(SandboxExecConfig, "unknown executor `special_exec` in pydev's config"):
+                o.executor_cls
+
+    def test_executor_cls_not_mentioned_custom_cls(self) -> None:
+        """
+        it's registered on configuration but not specified for custom loader class
+        """
+        with self.obj(
+            cfg=dummy_main_cfg(
+                program_kwargs={"executor": "special_exec"},
+                executors={"special_exec": {"bin_path": "/usr/bin/special_exec"}}
+            ),
+        ) as o:
+            self.assertEqual(o.executor_cls, SandboxExec)
+
+    def test_executor_cls_custom_cls(self) -> None:
+        with self.obj(
+            cfg=dummy_main_cfg(
+                program_kwargs={"executor": "buah_apple"},
+                executors={"buah_apple": {"load_cls": "sandock.executors.AppleContainerExec"}}
+            ),
+        ) as o:
+            self.assertEqual(o.executor_cls, AppleContainerExec)
+    
+    # TODO: [x] validation: program is not defined
+    def test_init_program_not_defined(self) -> None:
+        """
+        the provided program is not listed on configuration
+        """
+        with self.assertRaisesRegex(SandboxExecConfig, "`another_app` is not defined"):
+            with self.obj(args=Namespace(program="another_app")):
+                pass
+
+    # TODO: [x] validation: name of persist command canot be overrided
+    def test_apply_overrides_persist_cannot_overrided(self) -> None:
+        with self.assertRaisesRegex(
+            SandboxExecConfig, "name of persist program cannot be overrided"
+        ):
+            with self.obj(
+                ns_props=dict(program_args=["--sandbox-arg-name=rubydev"]),
+                cfg=dummy_main_cfg(program_kwargs={"persist": {"enable": True}}),
+            ) as o:
+                o.apply_overrides()
+
+
+    # TODO: [x] running hook test (recreate_img)
     @mock.patch("sandock.cli.SandboxExec")
-    def test_main(self, sandbox_exec_mock: MagicMock) -> None:
+    def test_main_hook_recreate_img(self, sandbox_exec_mock: MagicMock) -> None:
+        remote = MagicMock()
+        sandbox_exec_mock.return_value = remote
+
+        provided_args = ["--sandbox-arg-recreate-img"]
+        with self.obj(
+            ns_props=dict(program_args=provided_args),
+        ) as o:
+            o.main()
+
+            remote.hook_recreate_img.assert_called_once_with(True)
+            remote.do.assert_called_once_with(args=[])
+
+    @mock.patch("sandock.cli.SandboxExec")
+    def test_main_overrided_params(self, sandbox_exec_mock: MagicMock) -> None:
+        """
+        overrding program parameters
+        """
         remote = MagicMock()
         sandbox_exec_mock.return_value = remote
 
@@ -181,29 +261,27 @@ class CmdRunTest(SkeltonCmdTest):
             "--sandbox-arg-ports=8081:8081",
             "--version"]
         with self.obj(
-            args=Namespace(program="pydev", program_args=provided_args),
+            ns_props=dict(program_args=provided_args),
         ) as o:
             o.main()
 
-            self.assertDictEqual(
-                sandbox_exec_mock.call_args[1]["overrides"],
-                dict(
+            # TODO: [x] testing override parameters
+            self.assertEqual(
+                sandbox_exec_mock.call_args[1]["program"],
+                dummy_program_cfg(
                     hostname="change_host",
-                    allow_home_dir=False,
-                    recreate_img=False,
-                    ports=["8080:8080", "8081:8081"]),
-            )
-            remote.do.assert_called_once()
-            self.assertListEqual(
-                remote.do.call_args[1]["args"],
-                ["--version"],
-                msg="the forwarded argument to container's program",
+                    ports=[
+                        "8080:8080",
+                        "8081:8081"
+                    ]
+                ),
             )
 
+            remote.hook_recreate_img.assert_called_once_with(False)
+            remote.do.assert_called_once_with(args=["--version"])
+
     def test_overrides_properties_kv(self) -> None:
-        with self.obj(
-            args=Namespace(program="pydev"),
-        ) as o:
+        with self.obj() as o:
             result = o.override_properties(
                 args=[
                     "--sandbox-arg-env=DEBUG=true",
@@ -213,13 +291,10 @@ class CmdRunTest(SkeltonCmdTest):
             )
 
             expected_env = dict(DEBUG="true", APP_ENV="dev")
-            ov_props = dict(allow_home_dir=False, recreate_img=True, env=expected_env)
+            ov_props = dict(allow_home_dir=False, hook_recreate_img=True, env=expected_env)
             self.assertDictEqual(result, ov_props)
 
-        with self.obj(
-            args=Namespace(program="pydev"),
-        ) as o:
-
+        with self.obj() as o:
             # wrongly formatted key value provided
             with mock.patch("sys.exit") as sys_exit:
                 result = o.override_properties(args=["--sandbox-arg-env=NOVALUE"])
@@ -232,9 +307,7 @@ class CmdRunTest(SkeltonCmdTest):
         self, argparse_print_help: MagicMock, sys_exit: MagicMock
     ) -> None:
         # print help if provided with sandbox arg help arams
-        with self.obj(
-            args=Namespace(program="pydev"),
-        ) as o:
+        with self.obj() as o:
             o.override_properties(args=["--sandbox-arg-help"])
 
             argparse_print_help.assert_called_once()

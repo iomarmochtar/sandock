@@ -15,6 +15,7 @@ from sandock.config import (
     Network,
     Configuration,
     Execution,
+    Executor,
     MainConfig,
     load_config_file,
     main_config_finder,
@@ -28,7 +29,7 @@ class VolumeTest(BaseTestCase):
     def test_defaults(self) -> None:
         o = Volume()
 
-        self.assertEqual(o.driver, "local")
+        self.assertEqual(o.driver, None)
         self.assertEqual(o.driver_opts, {})
         self.assertEqual(o.labels, {})
 
@@ -56,6 +57,16 @@ class ImageBuildTest(BaseTestCase):
         ):
             ImageBuild(dockerFile="Dockerfile", dockerfile_inline="FROM ubuntu:22.04")
 
+class ExecutorTest(BaseTestCase):
+    def test_must_set(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, "one of `bin_path` or `load_cls` must be set on executor"
+        ):
+            Executor()
+
+    def test_set_value(self) -> None:
+        self.assertEqual(Executor(bin_path="container").bin_path, "container")
+        self.assertEqual(Executor(load_cls="lib.SomeClass").load_cls, "lib.SomeClass")
 
 class ContainerUserTest(BaseTestCase):
     def test_defaults(self) -> None:
@@ -205,6 +216,7 @@ class ProgramTest(BaseTestCase):
         self.assertTrue(o.interactive, True)
         self.assertFalse(o.allow_home_dir)
         self.assertIsNone(o.name)
+        self.assertIsNone(o.executor)
         self.assertIsNone(o.network)
         self.assertIsNone(o.hostname)
         self.assertIsNone(o.user)
@@ -381,6 +393,75 @@ class MainConfigTest(BaseTestCase):
                 driver="default",
                 params=dict(subnet="192.168.0.0/24", gateway="192.168.0.1"),
             ),
+        )
+
+    @mock.patch.dict(os.environ, dict(SNDK_FETCH_PROP="yes"))
+    def test_resolve_fetch_prop_enable(self) -> None:
+        o = self.obj(
+            programs=dict(
+                p1=Program(
+                    image="python:3.14",
+                    exec="python3",
+                    volumes=[
+                        "./:/opt/mount1",
+                        "another:/opt/another",
+                    ]
+                ),
+                p2=Program(
+                    image="python:3.11",
+                    exec="python3",
+                    volumes=[
+                        "top:/top",
+                        "fetch_prop(programs.p1.volumes)",
+                        "above:/above",
+                        "fetch_prop(programs.p1.volumes.0)",
+                    ]
+                )
+            )
+        )
+
+        self.assertListEqual(
+            o.programs["p2"].volumes,
+            [
+                "top:/top",
+                "./:/opt/mount1",
+                "another:/opt/another",
+                "above:/above",
+                "./:/opt/mount1"
+            ]
+        )
+
+
+    def test_resolve_fetch_prop_disable(self) -> None:
+        o = self.obj(
+            programs=dict(
+                p1=Program(
+                    image="python:3.14",
+                    exec="python3",
+                    volumes=[
+                        "./:/opt/mount1",
+                        "another:/opt/another",
+                    ]
+                ),
+                p2=Program(
+                    image="python:3.11",
+                    exec="python3",
+                    volumes=[
+                        "top:/top",
+                        "fetch_prop(programs.p1.volumes)",
+                        "above:/above",
+                    ]
+                )
+            )
+        )
+
+        self.assertListEqual(
+            o.programs["p2"].volumes,
+            [
+                "top:/top",
+                "fetch_prop(programs.p1.volumes)",
+                "above:/above",
+            ]
         )
 
 

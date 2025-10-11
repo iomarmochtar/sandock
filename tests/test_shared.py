@@ -6,7 +6,7 @@ from unittest import mock
 from inspect import cleandoc
 from subprocess import CalledProcessError
 from sandock import shared
-from helpers import BaseTestCase
+from helpers import dummy_main_cfg, BaseTestCase
 
 
 class RunShellTest(BaseTestCase):
@@ -58,6 +58,92 @@ class RunShellTest(BaseTestCase):
             "/home/sweet_home/path/to.yml",
         )
 
+class UtilitiesTest(BaseTestCase):
+    sample_dict = {
+        "satu": {
+            "sub1_satu": "hello",
+            "sub2_satu": "word",
+        },
+        "dua": [
+            "elem1",
+            "elem2",
+        ]
+    }
+
+    sample_obj = dummy_main_cfg(program_kwargs=dict(
+        volumes=[
+            "temp1:/opt/temp1",
+            "temp2:/opt/temp2",
+        ]
+    ))
+
+    def test_flatten_list(self) -> None:
+        l1 = [
+            "first:top",
+            "first:bottom",
+            [
+                "sub1:top",
+                "sub1:bottom"
+            ]
+        ]
+
+        l2 = [
+            "second:top",
+            l1,
+            "second:bottom"
+        ]
+
+        self.assertListEqual(shared.flatten_list(l2), [
+            "second:top",
+            "first:top",
+            "first:bottom",
+            "sub1:top",
+            "sub1:bottom",
+            "second:bottom"
+        ])
+
+    def test_fetch_prop_dict(self) -> None:
+        self.assertEqual(
+            shared.fetch_prop(path="satu.sub1_satu", obj=self.sample_dict),
+            "hello",
+            msg="fetch value"
+        )
+
+        with self.assertRaisesRegex(
+            KeyError, "Key `sub1_not_exists` not found in dict at `satu.sub1_not_exists`",
+            msg="key not found"):
+            shared.fetch_prop(path="satu.sub1_not_exists", obj=self.sample_dict)
+            
+
+    def test_fetch_prop_list(self) -> None:
+        self.assertEqual(
+            shared.fetch_prop(path="dua.1", obj=self.sample_dict),
+            "elem2",
+            msg="fetch list"
+        )
+
+        with self.assertRaisesRegex(
+            KeyError, "Invalid list index `10` in path `dua.10`",
+            msg="index not found"):
+            shared.fetch_prop(path="dua.10", obj=self.sample_dict)
+    
+    def test_fetch_prop_obj(self) -> None:
+        self.assertEqual(
+            shared.fetch_prop(path="programs.pydev.image", obj=self.sample_obj),
+            "python:3.11",
+        )
+
+        self.assertListEqual(
+            shared.fetch_prop(path="programs.pydev.volumes", obj=self.sample_obj),
+            [
+                "temp1:/opt/temp1",
+                "temp2:/opt/temp2",
+            ]
+        )
+
+        with self.assertRaisesRegex(
+            KeyError, "Attribute `not_exists` not found in object at `programs.pydev.not_exists`"):
+            shared.fetch_prop(path="programs.pydev.not_exists", obj=self.sample_obj)
 
 if __name__ == "__main__":
     unittest.main()

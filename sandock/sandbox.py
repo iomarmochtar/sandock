@@ -3,12 +3,12 @@ import json
 import tempfile
 import re
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Callable, Tuple
+from typing import List, Optional
 from pathlib import Path
 from .config import MainConfig
 from .config.program import Program
 from .config.image import ImageBuild, DEFAULT_DUMP_IMAGE_STORE
-from .shared import log, run_shell, file_hash, ensure_home_dir_special_prefix
+from .shared import log, run_shell, file_hash, ensure_home_dir_special_prefix, KV
 from .exceptions import SandboxExecution
 
 VOL_LABEL_CREATED_BY = "created_by.sandock"
@@ -19,42 +19,16 @@ special_char_re = re.compile(r"\W+")
 
 
 class SandboxExec(object):
+    name: str
     cfg: MainConfig
-    program_name: str
     program: Program
-    interactive: bool
     container_name: str
 
     def __init__(
-        self, name: str, cfg: MainConfig, overrides: Dict[str, Any] = {}
+        self, name: str, program: Program, cfg: MainConfig
     ) -> None:
-        self.cfg = cfg
         self.name = name
-        program = self.cfg.programs.get(name)
-        if not program:
-            raise SandboxExecution(f"`{name}` is not defined")
-
-        # persist container cannot be renamed in preventing unexpected behaviour
-        # (eg: need gc the stopped one with different name)
-        if program.persist.enable and "name" in overrides:
-            raise SandboxExecution("name of persist program cannot be overrided")
-
-        hooks: List[Tuple[Callable[...], Any]] = []  # type: ignore[misc]
-        # apply program's attribute overrides
-        for k, v in overrides.items():
-            if not hasattr(program, k):
-                # it might be an internal/hook method
-                method = f"hook_{k}"
-                if hasattr(self, method):
-                    log.debug(f"hook detected for method {method}")
-                    hooks.append((getattr(self, method), v))
-                    continue
-
-                log.warning(f"program doesn't has property {k}")
-                continue
-
-            log.debug(f"overriding value {v} in property {k}")
-            setattr(program, k, v)
+        self.cfg = cfg
         self.program = program
 
         # prevent if it's run on homedir, we don't want unintended breach except their aware
@@ -68,15 +42,12 @@ class SandboxExec(object):
             )
 
         self.container_name = self.generate_container_name()
-        # run hooks if any
-        for method_hook, arg in hooks:
-            method_hook(arg)
 
-    def hook_recreate_img(self, create: bool=False) -> None:
+    def hook_recreate_img(self, execute: bool=False) -> None:
         """
         register for pre-exec cmd to delete image run the related container
         """
-        if not create:
+        if not execute:
             return
 
         log.debug("[hook] registring for image deletion: {self.program.image}")
@@ -86,7 +57,16 @@ class SandboxExec(object):
 
     @property
     def docker_bin(self) -> str:
-        return self.cfg.execution.docker_bin
+        default_bin = self.cfg.execution.docker_bin
+        custom_executor = self.program.executor
+        if not custom_executor:
+            return default_bin
+
+        executor = self.cfg.executors.get(custom_executor)
+        if not executor:
+            raise SandboxExecution(f"Executor `{custom_executor}` is not defined")
+
+        return executor.bin_path if executor.bin_path else default_bin
 
     @property
     def current_timestamp(self) -> float:
@@ -120,7 +100,7 @@ class SandboxExec(object):
 
     def run_container_cmd(self) -> List[str]:
         """
-        docker run command builder
+        container run command builder
         """
         command = [
             self.docker_bin,
@@ -217,13 +197,18 @@ class SandboxExec(object):
         if VOL_LABEL_CREATED_BY not in vol.labels:
             vol.labels[VOL_LABEL_CREATED_BY] = "true"
 
-        vol_ops = " ".join([f"--opt {k}={v}" for k, v in vol.driver_opts.items()])
-        vol_labels = " ".join([f"--label {k}='{v}'" for k, v in vol.labels.items()])
-        vol_create_cmd = (
-            f"{self.docker_bin} volume create "
-            f"--driver={vol.driver} {vol_ops} {vol_labels}"
-            f" {name}"
-        )
+        vol_create_cmd = [f"{self.docker_bin} volume create"]
+
+        if vol.driver:
+            vol_create_cmd.append(f"--driver={vol.driver}")
+
+        if vol.driver_opts:
+            vol_create_cmd.append(" ".join([f"--opt {k}={v}" for k, v in vol.driver_opts.items()]))
+
+        if vol.labels:
+            vol_create_cmd.append(" ".join([f"--label {k}='{v}'" for k, v in vol.labels.items()]))
+
+        vol_create_cmd.append(name)
         run_shell(vol_create_cmd, capture_output=False)
 
     def ensure_network(self) -> None:
@@ -388,6 +373,15 @@ class SandboxExec(object):
         ):
             os.remove(docker_file_path)
 
+    def inspect_container_cmd(self) -> str:
+        return f"{self.docker_bin} container inspect {self.container_name}"
+
+    def container_start_cmd(self) -> str:
+        return f"{self.docker_bin} container start {self.container_name}"
+
+    def _check_running_container(self, container_info: List[KV]) -> bool:
+        return bool(container_info[0].get("State", {}).get("Status") == CONTAINER_STATE_RUNNING)
+
     @property
     def attach_container(self) -> bool:
         """
@@ -396,8 +390,7 @@ class SandboxExec(object):
         if not self.program.persist.enable:
             return False
 
-        cmd = f"{self.docker_bin} container inspect {self.container_name}"
-        inspect_result = run_shell(cmd, check_err=False)
+        inspect_result = run_shell(self.inspect_container_cmd(), check_err=False)
         if inspect_result.returncode != 0:
             # it might be the uncreated container
             err_msg = str(inspect_result.stderr)
@@ -414,13 +407,11 @@ class SandboxExec(object):
             )
             return False
 
-        is_running: bool = (
-            container_info[0].get("State", {}).get("Status") == CONTAINER_STATE_RUNNING
-        )
+        is_running = self._check_running_container(container_info)
         if not is_running and self.program.persist.auto_start:
             log.warning("persist container is down, starting container")
             run_shell(
-                f"{self.docker_bin} container start {self.container_name}",
+                self.container_start_cmd(),
                 capture_output=False,
             )
 
@@ -461,4 +452,4 @@ class SandboxExec(object):
         run_container_cmd.extend(args)
 
         log.debug(f"starting container cmd ~> {run_container_cmd}")
-        run_shell(command=" ".join(run_container_cmd), capture_output=False)
+        run_shell(run_container_cmd, capture_output=False)
