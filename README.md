@@ -97,6 +97,13 @@ pip show sandock | grep "Location: " | awk '{ print $2 }' | sed 's/lib.*$/bin/g'
 
 then create a symbolic link to where your env var `$PATH` located.
 
+**Another way**, if you use [mise](https://mise.jdx.dev/) set the following line into it's pinned version file.
+
+```toml
+[tools]
+"pipx:sandock" = { version = "[VERSION]", extras = "yml-config" }
+```
+
 ### 3. Create Configuration File
 
 Initialize configuration file, example:

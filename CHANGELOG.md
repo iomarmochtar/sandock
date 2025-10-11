@@ -11,6 +11,7 @@
 - [config] fetch another and merge another property by using `fetch_prop(location)`
 - [config] toggleable `fetch_prop(location)` by env `SNDK_FETCH_PROP` (value `yes`)
 - [config] flatten if the container caller is array and the result of `fetch_prop(location)` helper is an array
+- [packaging] actual version will be injected during build and publish pipeline
 
 ## [0.6.0]
 
