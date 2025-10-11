@@ -3,7 +3,8 @@ name: publish to Pypi
 on:
   push:
     tags:
-      - v*
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
 
 jobs:
   publish:
@@ -27,6 +28,15 @@ jobs:
           version: 2.1.2
           virtualenvs-create: true
           virtualenvs-in-project: true
+
+      - name: Set package version
+        run: |
+          TAG=${{ github.ref_name }}
+          VERSION=$(echo "$TAG" | sed 's/^v//')
+
+          echo "tag: $TAG, version: ${VERSION}"
+          sed -i -e 's|^version = "0.0.0-dev"|version = "'$VERSION'"|' pyproject.toml
+
 
       - name: Set build hash
         run: |

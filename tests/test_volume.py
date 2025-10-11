@@ -256,8 +256,7 @@ class TestBackupMgr(TestCase):
                 "--entrypoint=restic -v /home/user1/.sandock_vol_backup:/backup_repo "
                 f"-v {vol_name}:{mount_source}:ro restic/restic:0.18.0 --repo=/backup_repo "
                 f"--compression=auto --no-cache --insecure-no-password backup "
-                f'--skip-if-unchanged --group-by=paths {("" if not vol_name in exclude_params else f"--exclude-file={mount_source}/.sandock_backup_ignore")} '
-                f"{mount_source}"
+                f'--skip-if-unchanged --group-by=paths {("" if not vol_name in exclude_params else f"--exclude-file={mount_source}/.sandock_backup_ignore ")}{mount_source}'
             )
 
         mock_file_exists_in_vol.side_effect = [

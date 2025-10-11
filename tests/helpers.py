@@ -7,7 +7,7 @@ from subprocess import CompletedProcess
 from unittest import mock
 from contextlib import contextmanager
 from typing import Iterator, List
-from sandock.shared import log, SANDBOX_DEBUG_ENV, CONFIG_PATH_ENV, KV
+from sandock.shared import log, SANDBOX_DEBUG_ENV, CONFIG_PATH_ENV, KV, FETCH_PROP_ENABLE_ENV
 from sandock.config import MainConfig, Program
 
 
@@ -77,5 +77,6 @@ class BaseTestCase(unittest.TestCase):
 
     def setUp(self) -> None:
         # cleanup any env that used in app logic
-        for env_var in [SANDBOX_DEBUG_ENV, CONFIG_PATH_ENV]:
+        known_envs = [SANDBOX_DEBUG_ENV, CONFIG_PATH_ENV, FETCH_PROP_ENABLE_ENV]
+        for env_var in known_envs:
             os.environ.pop(env_var, None)

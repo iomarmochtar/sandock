@@ -1,5 +1,18 @@
 # Change Log
 
+## [0.7.0]
+
+### Features and Enhancements
+
+- [cli] adjustable container executor per program
+- [cli] support custom sandbox executor class for extendable parameters
+- [config] add default custom executor for `apple_container`
+- [config] set volume type as optional
+- [config] fetch another and merge another property by using `fetch_prop(location)`
+- [config] toggleable `fetch_prop(location)` by env `SNDK_FETCH_PROP` (value `yes`)
+- [config] flatten if the container caller is array and the result of `fetch_prop(location)` helper is an array
+- [packaging] actual version will be injected during build and publish pipeline
+
 ## [0.6.0]
 
 ### Features and Enhancements
