@@ -7,6 +7,7 @@ from typing import Any, Union, Dict, List, Optional
 
 
 KV = Dict[str, Any]
+EXECUTOR_DEFAULT = "default"
 CONFIG_PATH_ENV = "SNDK_CFG"
 SANDBOX_DEBUG_ENV = "SNDK_DEBUG"
 FETCH_PROP_ENABLE_ENV = "SNDK_FETCH_PROP"

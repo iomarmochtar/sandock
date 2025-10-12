@@ -1,5 +1,11 @@
 # Change Log
 
+## [0.7.1]
+
+### Fixes
+
+- [cli] missing inline override for setting executor and set default for the executor on program config 
+
 ## [0.7.0]
 
 ### Features and Enhancements
