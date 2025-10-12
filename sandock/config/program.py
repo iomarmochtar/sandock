@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict
 from .image import ImageBuild
+from ..shared import EXECUTOR_DEFAULT
 from ._helpers import build_if_set
 
 
@@ -43,13 +44,13 @@ class Program(object):
     interactive: bool = True
     allow_home_dir: bool = False
     name: Optional[str] = None
-    executor: Optional[str] = None
     network: Optional[str] = None
     hostname: Optional[str] = None
     build: Optional[ImageBuild] = None
     user: Optional[ContainerUser] = None
     workdir: Optional[str] = None
     platform: Optional[str] = None
+    executor: str = EXECUTOR_DEFAULT
     persist: PersistContainer = field(default_factory=PersistContainer)
     sandbox_mount: SandboxMount = field(default_factory=SandboxMount)
     env: Dict[str, str] = field(default_factory=dict)

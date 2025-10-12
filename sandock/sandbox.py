@@ -8,7 +8,7 @@ from pathlib import Path
 from .config import MainConfig
 from .config.program import Program
 from .config.image import ImageBuild, DEFAULT_DUMP_IMAGE_STORE
-from .shared import log, run_shell, file_hash, ensure_home_dir_special_prefix, KV
+from .shared import log, run_shell, file_hash, ensure_home_dir_special_prefix, KV, EXECUTOR_DEFAULT
 from .exceptions import SandboxExecution
 
 VOL_LABEL_CREATED_BY = "created_by.sandock"
@@ -58,15 +58,15 @@ class SandboxExec(object):
     @property
     def docker_bin(self) -> str:
         default_bin = self.cfg.execution.docker_bin
-        custom_executor = self.program.executor
-        if not custom_executor:
+        executor = self.program.executor
+        if executor == EXECUTOR_DEFAULT:
             return default_bin
 
-        executor = self.cfg.executors.get(custom_executor)
-        if not executor:
-            raise SandboxExecution(f"Executor `{custom_executor}` is not defined")
+        executor_cfg = self.cfg.executors.get(executor)
+        if not executor_cfg:
+            raise SandboxExecution(f"Executor `{executor}` is not defined")
 
-        return executor.bin_path if executor.bin_path else default_bin
+        return executor_cfg.bin_path if executor_cfg.bin_path else default_bin
 
     @property
     def current_timestamp(self) -> float:

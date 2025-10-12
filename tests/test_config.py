@@ -216,7 +216,7 @@ class ProgramTest(BaseTestCase):
         self.assertTrue(o.interactive, True)
         self.assertFalse(o.allow_home_dir)
         self.assertIsNone(o.name)
-        self.assertIsNone(o.executor)
+        self.assertEqual(o.executor, "default")
         self.assertIsNone(o.network)
         self.assertIsNone(o.hostname)
         self.assertIsNone(o.user)

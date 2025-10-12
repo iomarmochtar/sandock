@@ -211,7 +211,6 @@ class CmdRunTest(SkeltonCmdTest):
         ) as o:
             self.assertEqual(o.executor_cls, AppleContainerExec)
     
-    # TODO: [x] validation: program is not defined
     def test_init_program_not_defined(self) -> None:
         """
         the provided program is not listed on configuration
@@ -220,7 +219,6 @@ class CmdRunTest(SkeltonCmdTest):
             with self.obj(args=Namespace(program="another_app")):
                 pass
 
-    # TODO: [x] validation: name of persist command canot be overrided
     def test_apply_overrides_persist_cannot_overrided(self) -> None:
         with self.assertRaisesRegex(
             SandboxExecConfig, "name of persist program cannot be overrided"
@@ -232,7 +230,6 @@ class CmdRunTest(SkeltonCmdTest):
                 o.apply_overrides()
 
 
-    # TODO: [x] running hook test (recreate_img)
     @mock.patch("sandock.cli.SandboxExec")
     def test_main_hook_recreate_img(self, sandbox_exec_mock: MagicMock) -> None:
         remote = MagicMock()
@@ -259,13 +256,16 @@ class CmdRunTest(SkeltonCmdTest):
             "--sandbox-arg-hostname=change_host",
             "--sandbox-arg-ports=8080:8080",
             "--sandbox-arg-ports=8081:8081",
+            "--sandbox-arg-executor=podman",
             "--version"]
         with self.obj(
             ns_props=dict(program_args=provided_args),
+            cfg=dummy_main_cfg(
+                executors={"podman": {"bin_path": "podman"}}
+            )
         ) as o:
             o.main()
 
-            # TODO: [x] testing override parameters
             self.assertEqual(
                 sandbox_exec_mock.call_args[1]["program"],
                 dummy_program_cfg(
@@ -273,7 +273,8 @@ class CmdRunTest(SkeltonCmdTest):
                     ports=[
                         "8080:8080",
                         "8081:8081"
-                    ]
+                    ],
+                    executor="podman"
                 ),
             )
 

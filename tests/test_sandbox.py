@@ -58,8 +58,6 @@ class SandboxExecTest(BaseTestCase):
 
         return self.exec_cls(**kwargs)
 
-    # TODO: move this to cli test
-    # TODO: [x] keep to validate directory execution check
     def test_init_validations(self) -> None:
         with self.assertRaisesRegex(
             SandboxExecution,

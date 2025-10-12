@@ -8,7 +8,7 @@ from argparse import ArgumentParser, Namespace, REMAINDER, ArgumentTypeError
 from importlib.metadata import metadata
 from .config import MainConfig, load_config_file, main_config_finder
 from .config.program import Program
-from .shared import log, SANDBOX_DEBUG_ENV, CONFIG_PATH_ENV, KV, run_shell
+from .shared import log, SANDBOX_DEBUG_ENV, CONFIG_PATH_ENV, KV, run_shell, EXECUTOR_DEFAULT
 from .sandbox import SandboxExec
 from .volume import VolumeMgr
 from .exceptions import SandboxBaseException, SandboxExecConfig, SandboxVolumeExec
@@ -359,6 +359,10 @@ class CmdRun(BaseCommand):
         )
 
         oparser.add_argument(
+            self.override_arg(name="executor"), default=None, help="override executor"
+        )
+
+        oparser.add_argument(
             self.override_arg(name="allow-home-dir"),
             action="store_true",
             default=False,
@@ -459,7 +463,7 @@ class CmdRun(BaseCommand):
         return sandbox class that will be use
         """
         program_exec = self.program_cfg.executor
-        if not program_exec:
+        if program_exec == EXECUTOR_DEFAULT:
             return SandboxExec
 
         executor = self.config.executors.get(program_exec)
